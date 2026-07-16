@@ -25,7 +25,6 @@
             font-family: 'Inter', 'Noto Sans KR', sans-serif;
             background-color: #f8fafc;
         }
-        /* 스크롤바 커스텀 */
         ::-webkit-scrollbar {
             width: 6px;
             height: 6px;
@@ -50,7 +49,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        // 🚀 추가됨: Firebase Storage 연동 (진짜 파일 업로드/다운로드용)
+        // 🚀 Firebase Storage 연동 (진짜 파일 업로드/다운로드용)
         import { getStorage, ref, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         // 전성민님의 진짜 Firebase API 설정값 연동완료
@@ -67,11 +66,11 @@
             const app = initializeApp(firebaseConfig);
             const db = getFirestore(app);
             const auth = getAuth(app);
-            const storage = getStorage(app); // Storage 초기화
+            const storage = getStorage(app); 
 
             window.db = db;
             window.auth = auth;
-            window.storage = storage; // Storage 전역 객체 등록
+            window.storage = storage; 
             window.appId = "dogye-archive-app";
             window.firebaseMethods = {
                 signInAnonymously,
@@ -84,7 +83,7 @@
                 collection,
                 addDoc,
                 onSnapshot,
-                ref, // Storage reference
+                ref,
                 uploadBytesResumable,
                 getDownloadURL,
                 deleteObject
@@ -99,50 +98,7 @@
     </script>
 
     <script type="text/babel">
-        // 브라우저 대용량 저장소 IndexedDB (오프라인 모드용 예비 저장소)
-        const DB_NAME = "DogyeArchiveDB";
-        const STORE_NAME = "materials_files";
-
-        function initIndexedDB() {
-            return new Promise((resolve, reject) => {
-                const request = indexedDB.open(DB_NAME, 1);
-                request.onupgradeneeded = (e) => {
-                    const db = e.target.result;
-                    if (!db.objectStoreNames.contains(STORE_NAME)) {
-                        db.createObjectStore(STORE_NAME);
-                    }
-                };
-                request.onsuccess = (e) => resolve(e.target.result);
-                request.onerror = (e) => reject(e.target.error);
-            });
-        }
-
-        function saveFileToIndexedDB(id, file) {
-            return initIndexedDB().then(db => {
-                return new Promise((resolve, reject) => {
-                    const transaction = db.transaction(STORE_NAME, "readwrite");
-                    const store = transaction.objectStore(STORE_NAME);
-                    const request = store.put(file, id);
-                    request.onsuccess = () => resolve();
-                    request.onerror = (e) => reject(e.target.error);
-                });
-            });
-        }
-
-        function getFileFromIndexedDB(id) {
-            return initIndexedDB().then(db => {
-                return new Promise((resolve, reject) => {
-                    const transaction = db.transaction(STORE_NAME, "readonly");
-                    const store = transaction.objectStore(STORE_NAME);
-                    const request = store.get(id);
-                    request.onsuccess = (e) => resolve(e.target.result);
-                    request.onerror = (e) => reject(e.target.error);
-                });
-            });
-        }
-
         const { useState, useEffect, useRef } = React;
-
         const SCHOOL_DOMAIN = "dogye.hs.kr";
 
         function App() {
@@ -152,21 +108,20 @@
             const [isFirebaseLoading, setIsFirebaseLoading] = useState(true);
             const [firebaseError, setFirebaseError] = useState("");
             
-            // UI 탭 상태 (학습 자료실 vs Q&A 게시판)
-            const [activeMainTab, setActiveMainTab] = useState("materials"); // "materials" | "qna"
+            // UI 탭 상태
+            const [activeMainTab, setActiveMainTab] = useState("materials"); 
 
-            // 가입 폼 상태
+            // 가입/로그인 폼 상태
             const [signUpEmail, setSignUpEmail] = useState("");
             const [signUpPassword, setSignUpPassword] = useState("");
             const [signUpPasswordConfirm, setSignUpPasswordConfirm] = useState("");
             const [signUpName, setSignUpName] = useState("");
             const [signUpGrade, setSignUpGrade] = useState("1학년");
             
-            // 로그인 폼 상태
             const [loginEmail, setLoginEmail] = useState("");
             const [loginPassword, setLoginPassword] = useState("");
             
-            // 메인 데이터 (자료실 & Q&A)
+            // 데이터 상태
             const [materials, setMaterials] = useState([]);
             const [qnaList, setQnaList] = useState([]);
             
@@ -182,20 +137,19 @@
             // 모달 관리
             const [isUploadOpen, setIsUploadOpen] = useState(false);
             const [isQnaWriteOpen, setIsQnaWriteOpen] = useState(false);
-            const [isPreviewMode, setIsPreviewMode] = useState(false); // 미리보기 모드 상태
+            const [isPreviewMode, setIsPreviewMode] = useState(false);
             
             // 글로벌 실시간 공지
-            const [noticeText, setNoticeText] = useState("도계고등학교 학습 아카이브 3.0에 오신 것을 환영합니다! 자료를 나누고 함께 성장해 보세요.");
-            const [noticeEditor, setNoticeEditor] = useState("");
+            const [noticeText, setNoticeText] = useState("도계고등학교 학습 아카이브 3.0에 오신 것을 환영합니다! 진짜 파일 공유 기능이 활성화되었습니다.");
 
-            // 업로드 폼 모달 및 첨부파일 관리
+            // 🚀 실제 파일 업로드 상태 관리
             const [newTitle, setNewTitle] = useState("");
             const [newSubject, setNewSubject] = useState("물리학 I");
             const [newGrade, setNewGrade] = useState("1학년");
             const [newType, setNewType] = useState("요약 노트");
-            const [newFile, setNewFile] = useState(null); 
+            const [newFile, setNewFile] = useState(null); // 실제 파일 객체 저장용
             const [newDescription, setNewDescription] = useState("");
-            const [uploadProgress, setUploadProgress] = useState(0); // 파일 업로드 진행률
+            const [uploadProgress, setUploadProgress] = useState(0); // 프로그레스 바 상태
 
             // Q&A 작성 폼
             const [newQnaTitle, setNewQnaTitle] = useState("");
@@ -217,7 +171,7 @@
                 setTimeout(() => setToast(null), 3000);
             };
 
-            const triggerAlert = (message, title = "도계 아카이브 보안 통제") => {
+            const triggerAlert = (message, title = "도계 아카이브 시스템 안내") => {
                 setCustomAlert({ message, title });
             };
 
@@ -229,24 +183,18 @@
                 return email.replace(/\./g, "_");
             };
 
-            const isAdministrator = (email) => {
-                return email === "admin@dogye.hs.kr";
-            };
-
             const isValidSchoolEmail = (email) => {
                 return email.endsWith(`@${SCHOOL_DOMAIN}`);
             };
 
-            // D-Day 계산기 로직
+            // D-Day 계산기
             const calculateDday = (targetDateStr) => {
                 const today = new Date();
-                // 날짜만 비교하기 위해 시간 초기화
                 today.setHours(0, 0, 0, 0); 
                 const targetDate = new Date(targetDateStr);
                 targetDate.setHours(0, 0, 0, 0);
                 const diffTime = targetDate - today;
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                return diffDays;
+                return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
             };
 
             useEffect(() => {
@@ -254,14 +202,6 @@
                     const savedUser = localStorage.getItem("dogye_current_user");
                     if (savedUser) {
                         try { setUser(JSON.parse(savedUser)); } catch (e) {}
-                    }
-                    const savedMaterials = localStorage.getItem("dogye_archive_materials");
-                    if (savedMaterials) {
-                        try { setMaterials(JSON.parse(savedMaterials)); } catch (e) {}
-                    }
-                    const savedQna = localStorage.getItem("dogye_archive_qna");
-                    if (savedQna) {
-                        try { setQnaList(JSON.parse(savedQna)); } catch (e) {}
                     }
                     
                     const localUsers = JSON.parse(localStorage.getItem("dogye_archive_users") || "[]");
@@ -291,7 +231,6 @@
                                     setIsLocalMode(false);
                                     listenToCloudMaterials();
                                     listenToCloudQna();
-                                    listenToCloudNotice();
                                 }
                                 setIsFirebaseLoading(false);
                             });
@@ -313,64 +252,33 @@
                 return () => window.removeEventListener('firebase-initialized', handleFirebaseInitEvent);
             }, []);
 
-            useEffect(() => {
-                if (window.MathJax && window.MathJax.typesetPromise) {
-                    window.MathJax.typesetPromise().catch((err) => console.log(err));
-                }
-            }, [materials, selectedMaterial, activeMainTab]);
-
             // Firestore 실시간 리스너 (자료실)
             const listenToCloudMaterials = () => {
                 const { collection, onSnapshot } = window.firebaseMethods;
-                const db = window.db;
-                const appId = window.appId;
-                const materialsRef = collection(db, 'artifacts', appId, 'public', 'data', 'materials');
+                const materialsRef = collection(window.db, 'artifacts', window.appId, 'public', 'data', 'materials');
                 
                 onSnapshot(materialsRef, (snapshot) => {
                     const cloudList = [];
                     snapshot.forEach((d) => { cloudList.push({ ...d.data(), id: d.id }); });
                     cloudList.sort((a, b) => b.date.localeCompare(a.date));
                     setMaterials(cloudList);
-                    localStorage.setItem("dogye_archive_materials", JSON.stringify(cloudList));
                 }, () => setIsLocalMode(true));
             };
 
             // Firestore 실시간 리스너 (Q&A)
             const listenToCloudQna = () => {
                 const { collection, onSnapshot } = window.firebaseMethods;
-                const db = window.db;
-                const appId = window.appId;
-                const qnaRef = collection(db, 'artifacts', appId, 'public', 'data', 'qna');
+                const qnaRef = collection(window.db, 'artifacts', window.appId, 'public', 'data', 'qna');
                 
                 onSnapshot(qnaRef, (snapshot) => {
                     const qList = [];
                     snapshot.forEach((d) => { qList.push({ ...d.data(), id: d.id }); });
                     qList.sort((a, b) => b.date.localeCompare(a.date));
                     setQnaList(qList);
-                    localStorage.setItem("dogye_archive_qna", JSON.stringify(qList));
                 });
             };
 
-            const listenToCloudNotice = () => {
-                const { doc, onSnapshot } = window.firebaseMethods;
-                const db = window.db;
-                const appId = window.appId;
-                const noticeRef = doc(db, 'artifacts', appId, 'public', 'notice');
-                
-                onSnapshot(noticeRef, (snapshot) => {
-                    if (snapshot.exists()) {
-                        setNoticeText(snapshot.data().content || "");
-                        setNoticeEditor(snapshot.data().content || "");
-                    }
-                });
-            };
-
-            const loadRegisteredUsers = () => {
-                const localUsers = JSON.parse(localStorage.getItem("dogye_archive_users") || "[]");
-                setUsersList(localUsers);
-            };
-
-            // 로그인 & 회원가입 로직
+            // 로그인 및 회원가입
             const handleLogin = (e) => {
                 e.preventDefault();
                 if (!loginEmail || !loginPassword) return triggerAlert("이메일 주소와 패스워드를 올바르게 입력해 주세요.");
@@ -426,7 +334,7 @@
                 showToast("로그아웃 되었습니다.");
             };
 
-            // 🚀 핵심 1: 파일 업로드 (Firebase Storage + IndexedDB 백업)
+            // 🚀 진짜 파일 업로드 로직 (Firebase Storage)
             const handleUpload = async (e) => {
                 e.preventDefault();
                 if (!user) return;
@@ -435,155 +343,112 @@
                     return;
                 }
 
+                if (isLocalMode || !window.firebaseMethods) {
+                    triggerAlert("클라우드 동기화가 꺼져 있어 파일을 업로드할 수 없습니다. 관리자에게 문의하세요.");
+                    return;
+                }
+
                 const newId = String(Date.now());
-                let downloadUrl = null;
-                setUploadProgress(10); // 로딩 시작
+                setUploadProgress(5); // 프로그레스 바 시작
 
-                // 1. Firebase Storage 클라우드 업로드 시도
-                if (!isLocalMode && window.firebaseMethods && window.firebaseMethods.ref) {
-                    try {
-                        const { ref, uploadBytesResumable, getDownloadURL } = window.firebaseMethods;
-                        const storage = window.storage;
-                        // 한글 파일명 인코딩 문제 방지를 위해 영문/숫자 조합 아이디 덧붙임
-                        const safeFileName = `${newId}_${newFile.name}`;
-                        const fileRef = ref(storage, `materials/${safeFileName}`);
-                        
-                        const uploadTask = uploadBytesResumable(fileRef, newFile);
-                        
-                        await new Promise((resolve, reject) => {
-                            uploadTask.on('state_changed', 
-                                (snapshot) => {
-                                    const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                                    setUploadProgress(Math.max(10, Math.round(progress)));
-                                }, 
-                                (error) => reject(error), 
-                                async () => {
-                                    downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
-                                    resolve();
-                                }
-                            );
-                        });
-                        setUploadProgress(100);
-                    } catch (err) {
-                        console.error("Storage upload failed, falling back to local DB:", err);
-                        triggerAlert("클라우드 서버 업로드 중 에러가 발생하여 로컬(오프라인) 모드로 전환 저장합니다.");
-                    }
+                try {
+                    const { ref, uploadBytesResumable, getDownloadURL, doc, setDoc } = window.firebaseMethods;
+                    const storage = window.storage;
+                    
+                    // 파일명 충돌 방지를 위해 고유 ID를 붙임
+                    const safeFileName = `${newId}_${newFile.name}`;
+                    const fileRef = ref(storage, `materials/${safeFileName}`);
+                    
+                    const uploadTask = uploadBytesResumable(fileRef, newFile);
+                    
+                    uploadTask.on('state_changed', 
+                        (snapshot) => {
+                            // 진행률 계산
+                            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                            setUploadProgress(Math.max(5, Math.round(progress)));
+                        }, 
+                        (error) => {
+                            console.error(error);
+                            triggerAlert("파일 업로드 중 오류가 발생했습니다.");
+                            setUploadProgress(0);
+                        }, 
+                        async () => {
+                            // 업로드 완료 후 다운로드 URL 획득
+                            const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+                            setUploadProgress(100);
+
+                            const formatDoc = {
+                                id: newId,
+                                title: newTitle,
+                                grade: newGrade,
+                                subject: newSubject,
+                                type: newType,
+                                uploader: user.name,
+                                uploaderEmail: user.email,
+                                fileType: newFile.name.split('.').pop().toLowerCase(),
+                                fileName: newFile.name,
+                                downloads: 0,
+                                likes: 0,
+                                isVerified: user.role === "admin",
+                                description: newDescription,
+                                comments: [],
+                                date: new Date().toISOString().split('T')[0],
+                                fileUrl: downloadUrl // 🚀 Firebase Storage 진짜 링크 저장
+                            };
+
+                            // Firestore 데이터베이스에 문서 기록
+                            await setDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'materials', newId), formatDoc);
+                            
+                            showToast("진짜 파일 자료 기부가 완벽하게 등록되었습니다!");
+                            setIsUploadOpen(false);
+                            
+                            // 폼 초기화
+                            setNewTitle("");
+                            setNewFile(null);
+                            setNewDescription("");
+                            setUploadProgress(0);
+                            
+                            // 파일 입력 필드 초기화 (DOM 레벨)
+                            const fileInput = document.getElementById("file-upload-input");
+                            if(fileInput) fileInput.value = "";
+                        }
+                    );
+                } catch (err) {
+                    console.error("Upload error:", err);
+                    triggerAlert("서버와 통신 중 문제가 발생했습니다.");
+                    setUploadProgress(0);
                 }
-
-                // 2. 오프라인 모드이거나 Storage 실패 시 IndexedDB에 로컬 백업
-                if (!downloadUrl) {
-                    try {
-                        await saveFileToIndexedDB(newId, newFile);
-                        setUploadProgress(100);
-                    } catch (err) {
-                        triggerAlert("로컬 저장소 에러로 파일 저장을 실패했습니다.");
-                        setUploadProgress(0);
-                        return;
-                    }
-                }
-
-                const formatDoc = {
-                    id: newId,
-                    title: newTitle,
-                    grade: newGrade,
-                    subject: newSubject,
-                    type: newType,
-                    uploader: user.name,
-                    uploaderEmail: user.email,
-                    fileType: newFile.name.split('.').pop() || 'file',
-                    fileName: newFile.name,
-                    fileSize: newFile.size, 
-                    downloads: 0,
-                    likes: 0,
-                    isVerified: user.role === "admin",
-                    description: newDescription,
-                    comments: [],
-                    date: new Date().toISOString().split('T')[0],
-                    fileUrl: downloadUrl // 🚀 Firebase Storage 진짜 링크
-                };
-
-                const updatedList = [formatDoc, ...materials];
-                setMaterials(updatedList);
-                localStorage.setItem("dogye_archive_materials", JSON.stringify(updatedList));
-
-                if (!isLocalMode && window.firebaseMethods) {
-                    const { doc, setDoc } = window.firebaseMethods;
-                    try {
-                        await setDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'materials', newId), formatDoc);
-                    } catch (err) { }
-                }
-
-                showToast("자료 기부가 완벽하게 등록되었습니다!");
-                setIsUploadOpen(false);
-                setNewTitle("");
-                setNewFile(null);
-                setNewDescription("");
-                setUploadProgress(0);
             };
 
             const handleLike = async (mId) => {
                 if (!user) return;
-                const updatedList = materials.map(m => m.id === mId ? { ...m, likes: (m.likes || 0) + 1 } : m);
-                setMaterials(updatedList);
                 if (!isLocalMode && window.firebaseMethods) {
                     const { doc, updateDoc } = window.firebaseMethods;
-                    updateDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'materials', mId), { likes: updatedList.find(m=>m.id===mId).likes }).catch(()=>{});
+                    const target = materials.find(m => m.id === mId);
+                    if(target) {
+                        updateDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'materials', mId), { likes: (target.likes || 0) + 1 }).catch(()=>{});
+                    }
                 }
             };
 
-            // 다운로드 로직 (클라우드 URL 우선, 없으면 IndexedDB)
+            // 🚀 실제 파일 다운로드 로직
             const handleDownload = async (mat) => {
                 if (!user) return;
                 
                 // 다운로드 수 증가
-                const updatedList = materials.map(m => m.id === mat.id ? { ...m, downloads: (m.downloads || 0) + 1 } : m);
-                setMaterials(updatedList);
                 if (!isLocalMode && window.firebaseMethods) {
                     const { doc, updateDoc } = window.firebaseMethods;
                     updateDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'materials', mat.id), { downloads: (mat.downloads || 0) + 1 }).catch(()=>{});
                 }
 
-                // 1. Storage 클라우드 다운로드
                 if (mat.fileUrl) {
-                    // a 태그를 생성하여 진짜 파일을 다운로드하도록 강제
-                    fetch(mat.fileUrl)
-                        .then(response => response.blob())
-                        .then(blob => {
-                            const blobUrl = window.URL.createObjectURL(blob);
-                            const link = document.createElement('a');
-                            link.href = blobUrl;
-                            link.download = mat.fileName;
-                            document.body.appendChild(link);
-                            link.click();
-                            link.remove();
-                            window.URL.revokeObjectURL(blobUrl);
-                            showToast("클라우드에서 원본 파일을 완벽하게 다운로드했습니다!");
-                        })
-                        .catch(err => {
-                            // 브라우저 보안(CORS)으로 fetch가 막힐 경우 새 탭으로 열기 대체
-                            window.open(mat.fileUrl, '_blank');
-                            showToast("새 탭에서 원본 파일이 열립니다.");
-                        });
+                    // Firebase Storage 파일은 브라우저에서 새 창으로 열어서 다운로드 되도록 처리
+                    window.open(mat.fileUrl, '_blank');
+                    showToast("원본 파일을 다운로드합니다.");
                     return;
                 }
 
-                // 2. IndexedDB 로컬 다운로드
-                try {
-                    const actualFileObj = await getFileFromIndexedDB(mat.id);
-                    if (actualFileObj) {
-                        const blobUrl = URL.createObjectURL(actualFileObj);
-                        const link = document.createElement("a");
-                        link.href = blobUrl;
-                        link.download = actualFileObj.name;
-                        document.body.appendChild(link);
-                        link.click();
-                        link.remove();
-                        URL.revokeObjectURL(blobUrl);
-                        showToast("로컬 저장소에서 원본 파일을 다운로드했습니다!");
-                        return;
-                    }
-                } catch (e) { }
-                triggerAlert("파일의 원본 데이터를 찾을 수 없습니다. (오프라인 캐시가 지워졌거나 업로드 중 유실됨)");
+                triggerAlert("자료 파일을 찾을 수 없습니다.");
             };
 
             const handleCommentSubmit = async (e, targetId, isQna = false) => {
@@ -593,22 +458,18 @@
                 const newComment = { id: String(Date.now()), author: user.name, text: commentInput.trim(), date: new Date().toISOString().split('T')[0] };
 
                 if (!isQna) {
-                    const updatedList = materials.map(m => m.id === targetId ? { ...m, comments: [...(m.comments || []), newComment] } : m);
-                    setMaterials(updatedList);
-                    setSelectedMaterial(updatedList.find(m => m.id === targetId));
-                    if (!isLocalMode && window.firebaseMethods) {
+                    const target = materials.find(m => m.id === targetId);
+                    if (target && !isLocalMode && window.firebaseMethods) {
                         const { doc, updateDoc } = window.firebaseMethods;
-                        updateDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'materials', targetId), { comments: updatedList.find(m => m.id === targetId).comments }).catch(()=>{});
+                        updateDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'materials', targetId), { comments: [...(target.comments || []), newComment] }).catch(()=>{});
                     }
                 } else {
-                    const updatedList = qnaList.map(q => q.id === targetId ? { ...q, comments: [...(q.comments || []), newComment], answers: (q.answers || 0) + 1 } : q);
-                    setQnaList(updatedList);
-                    setSelectedQna(updatedList.find(q => q.id === targetId));
-                    if (!isLocalMode && window.firebaseMethods) {
+                    const target = qnaList.find(q => q.id === targetId);
+                    if (target && !isLocalMode && window.firebaseMethods) {
                         const { doc, updateDoc } = window.firebaseMethods;
                         updateDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'qna', targetId), { 
-                            comments: updatedList.find(q => q.id === targetId).comments,
-                            answers: updatedList.find(q => q.id === targetId).answers
+                            comments: [...(target.comments || []), newComment],
+                            answers: (target.answers || 0) + 1
                         }).catch(()=>{});
                     }
                 }
@@ -616,7 +477,6 @@
                 showToast("의견을 등록했습니다.");
             };
 
-            // Q&A 작성 등록
             const handleQnaSubmit = async (e) => {
                 e.preventDefault();
                 if(!user || !newQnaTitle || !newQnaContent) return triggerAlert("제목과 내용을 모두 적어주세요.");
@@ -633,10 +493,6 @@
                     comments: []
                 };
 
-                const updatedList = [newQna, ...qnaList];
-                setQnaList(updatedList);
-                localStorage.setItem("dogye_archive_qna", JSON.stringify(updatedList));
-
                 if (!isLocalMode && window.firebaseMethods) {
                     const { doc, setDoc } = window.firebaseMethods;
                     try {
@@ -652,16 +508,15 @@
 
             const deleteMaterial = async (mId) => {
                 if (user?.role !== "admin") return;
-                triggerConfirm("이 자료를 영구 파기하시겠습니까?", async () => {
+                triggerConfirm("이 자료를 영구 파기하시겠습니까? (실제 파일도 서버에서 삭제됩니다)", async () => {
                     const target = materials.find(m => m.id === mId);
-                    setMaterials(materials.filter(m => m.id !== mId));
                     setSelectedMaterial(null);
                     
                     if (!isLocalMode && window.firebaseMethods) {
                         const { doc, deleteDoc, ref, deleteObject } = window.firebaseMethods;
-                        // Firestore 데이터 삭제
+                        // Firestore 텍스트 데이터 삭제
                         deleteDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'materials', mId)).catch(()=>{});
-                        // Storage 파일 삭제 (URL이 있는 경우)
+                        // Storage 실제 파일 삭제
                         if (target && target.fileUrl) {
                             try {
                                 const fileRef = ref(window.storage, `materials/${mId}_${target.fileName}`);
@@ -669,14 +524,13 @@
                             } catch(e) { console.warn("Storage deletion failed or file doesn't exist.") }
                         }
                     }
-                    showToast("자료가 삭제되었습니다.");
+                    showToast("자료와 실제 파일이 모두 완전 삭제되었습니다.");
                 });
             };
             
             const deleteQna = async (qId) => {
                 if (user?.role !== "admin") return;
                 triggerConfirm("이 게시글을 영구 파기하시겠습니까?", async () => {
-                    setQnaList(qnaList.filter(q => q.id !== qId));
                     setSelectedQna(null);
                     if (!isLocalMode && window.firebaseMethods) {
                         const { doc, deleteDoc } = window.firebaseMethods;
@@ -692,13 +546,12 @@
                 return ['pdf', 'png', 'jpg', 'jpeg', 'gif'].includes(ext);
             };
 
-            // 필터 로직
+            // 검색 필터링
             const filteredMaterials = materials.filter(m => {
                 const matchSearch = m.title.toLowerCase().includes(searchQuery.toLowerCase()) || m.subject.toLowerCase().includes(searchQuery.toLowerCase()) || m.uploader.toLowerCase().includes(searchQuery.toLowerCase());
                 const matchGrade = activeGradeFilter === "전체" ? true : m.grade === activeGradeFilter;
                 const matchSubject = activeSubjectFilter === "전체" ? true : m.subject === activeSubjectFilter;
-                const matchType = activeTypeFilter === "전체" ? true : m.type === activeTypeFilter;
-                return matchSearch && matchGrade && matchSubject && matchType;
+                return matchSearch && matchGrade && matchSubject;
             });
             
             const filteredQna = qnaList.filter(q => {
@@ -760,7 +613,6 @@
 
             return (
                 <div className="flex flex-col min-h-screen bg-slate-50">
-                    {/* 상단 헤더 */}
                     <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
                         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
                             <div className="flex items-center space-x-3">
@@ -769,9 +621,11 @@
                                     <h1 className="text-lg font-extrabold text-slate-900 tracking-tight flex items-center gap-1.5">
                                         Dogye Archive 3.0
                                         {isLocalMode ? (
-                                            <span onClick={() => triggerAlert("GitHub Pages로 배포하거나 로컬 웹서버(Live Server)로 실행하시면 즉시 클라우드가 활성화됩니다.", "로컬 모드 해제 가이드")} className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-2 py-0.5 rounded-full border border-emerald-200 cursor-pointer">🟢 로컬 테스트 모드 ❓</span>
+                                            <span onClick={() => {
+                                                triggerAlert("현재 브라우저 보안 정책으로 인해 오프라인 상태입니다.\n\n해결방법 1: 깃허브 페이지로 코드를 배포한 뒤 접속하세요.\n해결방법 2: VS Code의 Live Server(포트 5500 등)로 열어주세요.", "오프라인 모드 원인 분석");
+                                            }} className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-2 py-0.5 rounded-full border border-emerald-200 cursor-pointer">🟢 로컬 테스트 모드 ❓</span>
                                         ) : (
-                                            <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-2 py-0.5 rounded-full border border-blue-200">🌐 클라우드 동기화 켜짐</span>
+                                            <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-2 py-0.5 rounded-full border border-blue-200">🌐 클라우드 실시간 동기화</span>
                                         )}
                                     </h1>
                                 </div>
@@ -779,17 +633,11 @@
                             
                             <div className="flex items-center space-x-4">
                                 <span className="text-sm font-bold text-slate-800 hidden sm:inline-block">{user.name}님</span>
-                                {user.role === "admin" && (
-                                    <button onClick={() => { loadRegisteredUsers(); setIsAdminConsoleOpen(true); }} className="bg-purple-50 text-purple-700 font-bold px-3 py-1.5 rounded-lg border border-purple-200 text-xs flex items-center gap-1">
-                                        <i className="fa-solid fa-shield-halved"></i> 콘솔
-                                    </button>
-                                )}
                                 <button onClick={handleLogout} className="text-slate-400 hover:text-red-500 transition-all"><i className="fa-solid fa-right-from-bracket text-lg"></i></button>
                             </div>
                         </div>
                     </header>
 
-                    {/* 긴급 교내 실시간 공지 */}
                     {noticeText && (
                         <div className="bg-yellow-50 border-b border-yellow-100">
                             <div className="max-w-7xl mx-auto py-3 px-4 sm:px-6 lg:px-8 flex items-center space-x-3 text-yellow-800 text-sm">
@@ -801,9 +649,7 @@
 
                     <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full space-y-6">
                         
-                        {/* 🚀 기능 5: 맞춤형 대시보드 위젯 */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            {/* 위젯 1: 대학수학능력시험 D-Day */}
                             <div className="bg-gradient-to-br from-indigo-500 to-blue-600 rounded-2xl p-5 text-white shadow-md flex items-center justify-between">
                                 <div>
                                     <p className="text-blue-100 text-xs font-bold mb-1">도계고 3학년 수능 카운터</p>
@@ -812,16 +658,14 @@
                                 <div className="text-4xl text-white/30"><i className="fa-solid fa-clock-rotate-left"></i></div>
                             </div>
                             
-                            {/* 위젯 2: 학사일정 D-Day */}
                             <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-5 text-white shadow-md flex items-center justify-between">
                                 <div>
-                                    <p className="text-teal-100 text-xs font-bold mb-1">2학기 중간고사 대비</p>
-                                    <h2 className="text-2xl font-extrabold tracking-tight">중간고사 D-{calculateDday('2026-10-05')}</h2>
+                                    <p className="text-teal-100 text-xs font-bold mb-1">2학기 기말고사 대비</p>
+                                    <h2 className="text-2xl font-extrabold tracking-tight">기말고사 D-{calculateDday('2026-12-10')}</h2>
                                 </div>
                                 <div className="text-4xl text-white/30"><i className="fa-solid fa-calendar-check"></i></div>
                             </div>
 
-                            {/* 위젯 3: 오늘의 급식 메뉴 (예시 UI - 실제로는 나이스 API 연동 가능) */}
                             <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-col justify-center relative overflow-hidden">
                                 <div className="absolute top-0 right-0 w-24 h-24 bg-orange-50 rounded-bl-full -z-10"></div>
                                 <div className="flex justify-between items-start mb-2">
@@ -832,7 +676,6 @@
                             </div>
                         </div>
 
-                        {/* 🚀 기능 3: 탭 메뉴 (자료실 vs Q&A) */}
                         <div className="flex items-center space-x-6 border-b border-slate-200">
                             <button 
                                 onClick={() => setActiveMainTab("materials")}
@@ -846,7 +689,6 @@
                             </button>
                         </div>
 
-                        {/* 검색 및 필터 패널 */}
                         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
                             <div className="flex flex-col sm:flex-row gap-3 justify-between items-center">
                                 <div className="w-full relative">
@@ -863,7 +705,7 @@
                                     onClick={() => activeMainTab === 'materials' ? setIsUploadOpen(true) : setIsQnaWriteOpen(true)}
                                     className="w-full sm:w-auto shrink-0 bg-slate-800 hover:bg-slate-900 text-white font-bold px-5 py-2.5 rounded-xl shadow-sm transition-all text-sm flex items-center justify-center gap-1.5">
                                     <i className={`fa-solid ${activeMainTab === 'materials' ? 'fa-upload' : 'fa-pen'}`}></i>
-                                    {activeMainTab === 'materials' ? '새 자료 기부' : '질문 작성하기'}
+                                    {activeMainTab === 'materials' ? '파일 기부하기' : '질문 작성하기'}
                                 </button>
                             </div>
 
@@ -887,7 +729,6 @@
                             </div>
                         </div>
 
-                        {/* 리스트 렌더링 영역 */}
                         {activeMainTab === 'materials' ? (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                                 {filteredMaterials.map(mat => (
@@ -898,13 +739,13 @@
                                                     <span className="bg-blue-50 text-blue-600 text-[10px] font-bold px-2 py-0.5 rounded">{mat.grade}</span>
                                                     <span className="bg-slate-100 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded">{mat.subject}</span>
                                                 </div>
-                                                {mat.fileUrl && <i className="fa-solid fa-cloud text-blue-400 text-xs" title="클라우드 파일"></i>}
+                                                <i className="fa-solid fa-file-arrow-down text-blue-400 text-lg" title="실제 파일 내장"></i>
                                             </div>
                                             <h3 className="text-sm font-bold text-slate-800 line-clamp-2 mb-2 leading-snug">{mat.title}</h3>
                                             <p className="text-xs text-slate-500 line-clamp-2">{mat.description}</p>
                                         </div>
                                         <div className="bg-slate-50 px-5 py-3 border-t border-slate-100 flex justify-between text-xs text-slate-400 font-medium">
-                                            <span>{mat.uploader}</span>
+                                            <span>작성자: {mat.uploader}</span>
                                             <div className="flex gap-3">
                                                 <span className="text-red-400"><i className="fa-solid fa-heart mr-1"></i>{mat.likes}</span>
                                                 <span className="text-blue-500"><i className="fa-solid fa-download mr-1"></i>{mat.downloads}</span>
@@ -928,7 +769,7 @@
                                                 <p className="text-xs text-slate-500 mt-1 line-clamp-1">{qna.content}</p>
                                             </div>
                                             <div className="text-xs text-slate-400 shrink-0 text-left sm:text-right flex sm:flex-col gap-2 sm:gap-1">
-                                                <span>{qna.author}</span>
+                                                <span>작성자: {qna.author}</span>
                                                 <span><i className="fa-regular fa-comment mr-1"></i>답변 {qna.answers || 0}</span>
                                                 <span className="text-[10px]">{qna.date}</span>
                                             </div>
@@ -950,16 +791,19 @@
                                 </div>
 
                                 <div className="p-6 overflow-y-auto space-y-6 flex-1">
-                                    {/* 🚀 기능 4: 미리보기 모드 렌더링 */}
                                     {isPreviewMode && selectedMaterial.fileUrl ? (
                                         <div className="bg-slate-900 rounded-xl overflow-hidden shadow-inner h-[60vh] relative">
-                                            <div className="absolute top-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded">미리보기 모드</div>
+                                            <div className="absolute top-2 right-2 flex gap-2">
+                                                <span className="bg-black/50 text-white text-xs px-2 py-1 rounded font-bold">미리보기 모드</span>
+                                                <button onClick={() => setIsPreviewMode(false)} className="bg-red-500 hover:bg-red-600 text-white text-xs px-2 py-1 rounded font-bold transition-all"><i className="fa-solid fa-xmark mr-1"></i>닫기</button>
+                                            </div>
                                             {isPdfOrImage(selectedMaterial.fileName) ? (
                                                 <iframe src={selectedMaterial.fileUrl} className="w-full h-full border-0 bg-white" title="Preview"></iframe>
                                             ) : (
                                                 <div className="w-full h-full flex flex-col items-center justify-center text-slate-400">
                                                     <i className="fa-solid fa-file-circle-exclamation text-4xl mb-3"></i>
                                                     <p>미리보기를 지원하지 않는 파일 형식입니다. (PDF 및 이미지만 가능)</p>
+                                                    <button onClick={() => handleDownload(selectedMaterial)} className="mt-4 bg-blue-600 text-white font-bold px-4 py-2 rounded-xl text-xs"><i className="fa-solid fa-download mr-1"></i>원본 다운로드</button>
                                                 </div>
                                             )}
                                         </div>
@@ -971,20 +815,19 @@
                                             </div>
                                             <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 flex flex-col sm:flex-row items-center justify-between gap-4">
                                                 <div className="flex items-center space-x-3 w-full sm:w-auto overflow-hidden">
-                                                    <div className="bg-blue-600 text-white p-3 rounded-xl shrink-0"><i className="fa-solid fa-file-invoice text-xl"></i></div>
+                                                    <div className="bg-blue-600 text-white p-3 rounded-xl shrink-0"><i className="fa-solid fa-file-lines text-xl"></i></div>
                                                     <div className="truncate">
                                                         <p className="text-sm font-bold text-slate-700 truncate">{selectedMaterial.fileName}</p>
-                                                        {selectedMaterial.fileSize && <p className="text-[10px] text-slate-500">{(selectedMaterial.fileSize/(1024*1024)).toFixed(2)} MB</p>}
+                                                        <p className="text-[10px] text-slate-500">안전한 클라우드 파일</p>
                                                     </div>
                                                 </div>
                                                 <div className="flex gap-2 w-full sm:w-auto">
-                                                    {/* 미리보기 버튼 (Storage URL이 있고 지원 확장자일 때만) */}
-                                                    {selectedMaterial.fileUrl && isPdfOrImage(selectedMaterial.fileName) && (
-                                                        <button onClick={() => setIsPreviewMode(true)} className="flex-1 sm:flex-none bg-white text-blue-600 border border-blue-200 font-bold px-4 py-2.5 rounded-xl transition-all shadow-sm text-xs text-center">
+                                                    {isPdfOrImage(selectedMaterial.fileName) && (
+                                                        <button onClick={() => setIsPreviewMode(true)} className="flex-1 sm:flex-none bg-indigo-600 text-white font-bold px-4 py-2.5 rounded-xl shadow-md text-xs whitespace-nowrap">
                                                             <i className="fa-solid fa-eye mr-1"></i>미리보기
                                                         </button>
                                                     )}
-                                                    <button onClick={() => handleDownload(selectedMaterial)} className="flex-1 sm:flex-none bg-blue-600 text-white font-bold px-5 py-2.5 rounded-xl shadow-md text-xs whitespace-nowrap">
+                                                    <button onClick={() => handleDownload(selectedMaterial)} className="flex-1 sm:flex-none bg-blue-600 text-white font-bold px-4 py-2.5 rounded-xl shadow-md text-xs whitespace-nowrap">
                                                         <i className="fa-solid fa-download mr-1"></i>다운로드
                                                     </button>
                                                 </div>
@@ -992,17 +835,11 @@
                                         </>
                                     )}
 
-                                    {isPreviewMode && (
-                                        <button onClick={() => setIsPreviewMode(false)} className="w-full text-center text-sm font-bold text-slate-500 hover:text-slate-800 mb-4">
-                                            <i className="fa-solid fa-arrow-left mr-1"></i>상세정보로 돌아가기
-                                        </button>
-                                    )}
-
                                     {!isPreviewMode && (
                                         <div className="space-y-4">
                                             <div className="flex justify-between text-xs text-slate-400 border-b border-slate-100 pb-2">
                                                 <span>작성자: {selectedMaterial.uploader}</span>
-                                                {user?.role === "admin" && <button onClick={() => deleteMaterial(selectedMaterial.id)} className="text-red-500 font-bold"><i className="fa-solid fa-trash mr-1"></i>삭제</button>}
+                                                {user?.role === "admin" && <button onClick={() => deleteMaterial(selectedMaterial.id)} className="text-red-500 font-bold"><i className="fa-solid fa-trash mr-1"></i>강제 파기</button>}
                                             </div>
                                             <h4 className="text-xs font-bold text-slate-500">댓글 피드백</h4>
                                             <div className="space-y-3 max-h-40 overflow-y-auto">
@@ -1084,55 +921,60 @@
                         </div>
                     )}
 
-                    {/* 자료 기부 모달 (수정됨: 업로드 프로그레스 바 추가) */}
+                    {/* 자료 기부 모달 (진짜 파일 업로드 + 프로그레스 바) */}
                     {isUploadOpen && (
                         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                             <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200">
                                 <div className="p-5 border-b border-slate-100 flex justify-between bg-slate-50">
-                                    <h2 className="text-base font-bold"><i className="fa-solid fa-file-arrow-up text-blue-600 mr-2"></i>자료 기부하기</h2>
+                                    <h2 className="text-base font-bold"><i className="fa-solid fa-file-arrow-up text-blue-600 mr-2"></i>클라우드 파일 업로드</h2>
                                     <button onClick={() => { setIsUploadOpen(false); setUploadProgress(0); }} className="text-slate-400 hover:text-slate-600"><i className="fa-solid fa-xmark"></i></button>
                                 </div>
                                 <form onSubmit={handleUpload} className="p-6 space-y-4">
-                                    <input type="text" placeholder="자료 제목" value={newTitle} onChange={(e)=>setNewTitle(e.target.value)} className="w-full px-3 py-2 border rounded-xl text-xs" />
+                                    <input type="text" placeholder="자료 제목을 적어주세요" value={newTitle} onChange={(e)=>setNewTitle(e.target.value)} className="w-full px-3 py-2 border rounded-xl text-xs focus:ring-1 focus:ring-blue-500" disabled={uploadProgress > 0} />
+                                    
                                     <div className="flex gap-2">
-                                        <select value={newGrade} onChange={(e)=>setNewGrade(e.target.value)} className="flex-1 px-3 py-2 border rounded-xl text-xs"><option value="1학년">1학년</option><option value="2학년">2학년</option><option value="3학년">3학년</option></select>
-                                        <select value={newSubject} onChange={(e)=>setNewSubject(e.target.value)} className="flex-1 px-3 py-2 border rounded-xl text-xs"><option value="국어">국어</option><option value="수학">수학</option><option value="물리학 I">물리학 I</option><option value="통합과학">통합과학</option></select>
+                                        <select value={newGrade} onChange={(e)=>setNewGrade(e.target.value)} className="flex-1 px-3 py-2 border rounded-xl text-xs" disabled={uploadProgress > 0}><option value="1학년">1학년</option><option value="2학년">2학년</option><option value="3학년">3학년</option></select>
+                                        <select value={newSubject} onChange={(e)=>setNewSubject(e.target.value)} className="flex-1 px-3 py-2 border rounded-xl text-xs" disabled={uploadProgress > 0}><option value="국어">국어</option><option value="수학">수학</option><option value="영어">영어</option><option value="물리학 I">물리학 I</option><option value="화학 I">화학 I</option><option value="생명과학 I">생명과학 I</option><option value="지구과학 I">지구과학 I</option><option value="통합과학">통합과학</option><option value="통합사회">통합사회</option></select>
                                     </div>
-                                    <div className="border-2 border-dashed border-blue-200 bg-blue-50/50 rounded-2xl p-6 text-center cursor-pointer relative hover:border-blue-400">
-                                        <input type="file" onChange={(e) => e.target.files && setNewFile(e.target.files[0])} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                                        {newFile ? (
-                                            <div><p className="text-xs font-bold text-blue-700 truncate">{newFile.name}</p><p className="text-[10px] text-slate-400 mt-1">{(newFile.size/(1024*1024)).toFixed(2)} MB</p></div>
-                                        ) : (
-                                            <div><i className="fa-solid fa-file-circle-plus text-3xl text-blue-300 mb-2"></i><p className="text-xs font-bold text-slate-600">이곳을 눌러 실제 파일을 첨부하세요</p><p className="text-[10px] text-slate-400">PDF, 이미지, HWP 등 모두 지원</p></div>
+                                    
+                                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                                        <label className="block text-[11px] font-bold text-blue-800 mb-2"><i className="fa-solid fa-paperclip mr-1"></i>실제 파일 첨부 (PDF, HWP, 이미지 등)</label>
+                                        <input type="file" id="file-upload-input" onChange={(e)=>setNewFile(e.target.files[0])} className="w-full text-xs bg-white rounded-lg p-2 border border-blue-100" disabled={uploadProgress > 0} />
+                                        
+                                        {/* 🚀 파일 업로드 애니메이션 진행 표시줄 */}
+                                        {uploadProgress > 0 && (
+                                            <div className="mt-3">
+                                                <div className="flex justify-between text-[10px] font-bold text-blue-600 mb-1">
+                                                    <span>클라우드 서버 전송 중...</span>
+                                                    <span>{uploadProgress}%</span>
+                                                </div>
+                                                <div className="w-full bg-blue-100 rounded-full h-2">
+                                                    <div className="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-out" style={{ width: `${uploadProgress}%` }}></div>
+                                                </div>
+                                            </div>
                                         )}
                                     </div>
-                                    <textarea placeholder="자료에 대한 팁이나 오답노트를 적어주세요." value={newDescription} onChange={(e)=>setNewDescription(e.target.value)} rows="3" className="w-full px-3 py-2 border rounded-xl text-xs resize-none"></textarea>
+
+                                    <textarea placeholder="자료에 대한 팁이나 오답노트를 적어주세요." value={newDescription} onChange={(e)=>setNewDescription(e.target.value)} rows="3" className="w-full px-3 py-2 border rounded-xl text-xs resize-none focus:ring-1 focus:ring-blue-500" disabled={uploadProgress > 0}></textarea>
                                     
-                                    {/* 🚀 파일 업로드 프로그레스 바 */}
-                                    {uploadProgress > 0 && uploadProgress < 100 && (
-                                        <div className="w-full bg-slate-200 rounded-full h-2.5 mb-4">
-                                            <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }}></div>
-                                            <p className="text-[10px] text-center text-slate-500 mt-1">서버에 안전하게 올리는 중... {uploadProgress}%</p>
-                                        </div>
-                                    )}
-                                    
-                                    <button type="submit" disabled={uploadProgress > 0 && uploadProgress < 100} className="w-full bg-blue-600 disabled:bg-blue-300 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-md text-sm">도계 아카이브 등재 신청</button>
+                                    <button type="submit" disabled={uploadProgress > 0} className={`w-full font-bold py-3 rounded-xl shadow-md text-sm transition-all ${uploadProgress > 0 ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
+                                        {uploadProgress > 0 ? '서버에 저장 중입니다...' : '도계 아카이브 등재 신청'}
+                                    </button>
                                 </form>
                             </div>
                         </div>
                     )}
 
-                    {/* 토스트 및 알림창 등 유틸 모달 유지 */}
-                    {toast && <div className="fixed bottom-4 right-4 z-[99] bg-slate-900 text-white py-3 px-5 rounded-xl text-xs">{toast.message}</div>}
+                    {toast && <div className="fixed bottom-4 right-4 z-[99] bg-slate-900 text-white py-3 px-5 rounded-xl text-xs shadow-xl">{toast.message}</div>}
                     {customAlert && (
                         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
-                            <div className="bg-white p-6 rounded-2xl max-w-sm w-full text-center"><h3 className="font-bold text-slate-800 mb-2">{customAlert.title}</h3><p className="text-xs text-slate-500 mb-4 whitespace-pre-wrap">{customAlert.message}</p><button onClick={()=>setCustomAlert(null)} className="w-full bg-slate-800 text-white text-xs font-bold py-2 rounded-xl">확인</button></div>
+                            <div className="bg-white p-6 rounded-2xl max-w-sm w-full text-center shadow-2xl"><h3 className="font-bold text-slate-800 mb-2">{customAlert.title}</h3><p className="text-xs text-slate-500 mb-4 whitespace-pre-wrap">{customAlert.message}</p><button onClick={()=>setCustomAlert(null)} className="w-full bg-slate-800 text-white text-xs font-bold py-2 rounded-xl">확인</button></div>
                         </div>
                     )}
                     {customConfirm && (
                         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
-                            <div className="bg-white p-6 rounded-2xl max-w-sm w-full text-center"><h3 className="font-bold text-slate-800 mb-2">{customConfirm.title}</h3><p className="text-xs text-slate-500 mb-4">{customConfirm.message}</p>
-                                <div className="flex gap-2"><button onClick={()=>setCustomConfirm(null)} className="flex-1 bg-slate-100 text-xs font-bold py-2 rounded-xl">취소</button><button onClick={()=>{customConfirm.onConfirm(); setCustomConfirm(null);}} className="flex-1 bg-red-600 text-white text-xs font-bold py-2 rounded-xl">실행</button></div>
+                            <div className="bg-white p-6 rounded-2xl max-w-sm w-full text-center shadow-2xl"><h3 className="font-bold text-slate-800 mb-2">{customConfirm.title}</h3><p className="text-xs text-slate-500 mb-4">{customConfirm.message}</p>
+                                <div className="flex gap-2"><button onClick={()=>setCustomConfirm(null)} className="flex-1 bg-slate-100 text-slate-600 text-xs font-bold py-2 rounded-xl">취소</button><button onClick={()=>{customConfirm.onConfirm(); setCustomConfirm(null);}} className="flex-1 bg-red-600 text-white text-xs font-bold py-2 rounded-xl">실행</button></div>
                             </div>
                         </div>
                     )}
