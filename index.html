@@ -356,19 +356,13 @@
 
                 const materialsRef = collection(db, 'artifacts', appId, 'public', 'data', 'materials');
                 onSnapshot(materialsRef, (snapshot) => {
-                    if (snapshot.empty) {
-                        INITIAL_MATERIALS.forEach(async (item) => {
-                            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'materials', item.id), item);
-                        });
-                    } else {
-                        const cloudList = [];
-                        snapshot.forEach((d) => {
-                            cloudList.push({ ...d.data(), id: d.id });
-                        });
-                        cloudList.sort((a, b) => b.date.localeCompare(a.date));
-                        setMaterials(cloudList);
-                        localStorage.setItem("dogye_archive_materials", JSON.stringify(cloudList));
-                    }
+                    const cloudList = [];
+                    snapshot.forEach((d) => {
+                        cloudList.push({ ...d.data(), id: d.id });
+                    });
+                    cloudList.sort((a, b) => b.date.localeCompare(a.date));
+                    setMaterials(cloudList);
+                    localStorage.setItem("dogye_archive_materials", JSON.stringify(cloudList));
                 }, (error) => {
                     console.log("Database connection offline. Reverted to Local storage sync.");
                     setIsLocalMode(true);
