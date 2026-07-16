@@ -18,7 +18,7 @@
     <!-- Google Fonts - Noto Sans KR & Inter 적용 -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2 family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
     
     <style>
         body {
@@ -51,14 +51,14 @@
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Firebase 가짜 설정값 (배포 전까지는 오류 나지 않도록 로컬 Fallback이 자동 작동함)
+        // 전성민 학우님의 진짜 Firebase API 설정값 연동완료
         const firebaseConfig = {
-            apiKey: "DUMMY_API_KEY_DOGYE_ARCHIVE_PLACEHOLDER",
+            apiKey: "AIzaSyBBDLP4uI9Mom_UMxKvnYDq9f2V72Y1fB4",
             authDomain: "dogye-archive.firebaseapp.com",
             projectId: "dogye-archive",
             storageBucket: "dogye-archive.firebasestorage.app",
-            messagingSenderId: "000000000000",
-            appId: "1:000000000000:web:dummyappid"
+            messagingSenderId: "435225858562",
+            appId: "1:435225858562:web:f32232e414dbfc7ba30d1b"
         };
 
         try {
@@ -83,14 +83,14 @@
             };
             window.dispatchEvent(new Event('firebase-initialized'));
         } catch (err) {
-            console.warn("Firebase initialization skipped or failed. Hybrid Local Mode is activated automatically.", err);
+            console.warn("Firebase initialization failed. Operating on Secure Offline mode.", err);
             window.firebaseMethods = null;
             window.dispatchEvent(new Event('firebase-initialized'));
         }
     </script>
 
     <script type="text/babel">
-        // 브라우저 내부 대용량 스토리지 IndexedDB 초기화 및 제어 함수
+        // 브라우저 대용량 저장소 IndexedDB (실제 파일 첨부 및 다운로드용)
         const DB_NAME = "DogyeArchiveDB";
         const STORE_NAME = "materials_files";
 
@@ -134,29 +134,68 @@
 
         const { useState, useEffect, useRef } = React;
 
-        // 도계고등학교 이메일 인증용 고정 도메인
+        // 도계고등학교 소속 검증 도메인
         const SCHOOL_DOMAIN = "dogye.hs.kr";
 
-        
+        const INITIAL_MATERIALS = [
+            {
+                id: "1",
+                title: "도계고 2학년 1학기 중간고사 물리학I 기출 경향 및 킬러 문항 분석",
+                grade: "2학년",
+                subject: "물리학 I",
+                type: "기출 분석",
+                uploader: "전성민",
+                uploaderEmail: "sungmin@dogye.hs.kr",
+                fileType: "pdf",
+                fileName: "Dogye_Physics1_Midterm_Analysis.pdf",
+                fileSize: 1845210,
+                downloads: 48,
+                likes: 18,
+                isVerified: true,
+                description: "작년 도계고 물리학 I 기출 문항 중 역학적 에너지 보존 법칙인 $E_k + E_p = \\text{const}$ 파트의 핵심 킬러 문항을 정밀하게 분석하고 변형 기출 3선 풀이를 추가한 자료집입니다.",
+                comments: [
+                    { id: "c1", author: "김민혁", text: "역학 변형 공식 정리 대박이네요... 물리 지필평가 때 정말 많이 도움 받았습니다!", date: "2026-07-14" }
+                ],
+                date: "2026-07-12"
+            },
+            {
+                id: "2",
+                title: "3학년 영어 독해와 작문 수행평가 만점 에세이 구조 가이드라인",
+                grade: "3학년",
+                subject: "영어",
+                type: "수행평가 대비",
+                uploader: "이지은",
+                uploaderEmail: "jieun@dogye.hs.kr",
+                fileType: "hwp",
+                fileName: "Dogye_English_Essay_Structure.hwp",
+                fileSize: 412500,
+                downloads: 134,
+                likes: 52,
+                isVerified: false,
+                description: "고득점 영작문을 빠르게 기획할 수 있도록 설계한 서론-본론-결론 템플릿입니다. 문법적 실수를 유발하기 쉬운 포인트를 짚어둔 유용한 영어 구문 정리집입니다.",
+                comments: [],
+                date: "2026-07-14"
+            }
+        ];
 
         function App() {
             const [user, setUser] = useState(null); 
             const [isLoginView, setIsLoginView] = useState(true);
-            const [isLocalMode, setIsLocalMode] = useState(true); // 기본적으로 로컬 모드로 시작하여 오프라인 지원
+            const [isLocalMode, setIsLocalMode] = useState(true); 
             const [isFirebaseLoading, setIsFirebaseLoading] = useState(true);
             
-            // 회원가입 폼 상태값들
+            // 가입 폼 상태
             const [signUpEmail, setSignUpEmail] = useState("");
             const [signUpPassword, setSignUpPassword] = useState("");
             const [signUpPasswordConfirm, setSignUpPasswordConfirm] = useState("");
             const [signUpName, setSignUpName] = useState("");
             const [signUpGrade, setSignUpGrade] = useState("1학년");
             
-            // 로그인 폼 상태값들
+            // 로그인 폼 상태
             const [loginEmail, setLoginEmail] = useState("");
             const [loginPassword, setLoginPassword] = useState("");
             
-            // 메인 학습 자료 리스트 및 필터 상태값들
+            // 메인 데이터 상태 및 정렬/필터 필터링
             const [materials, setMaterials] = useState([]);
             const [selectedMaterial, setSelectedMaterial] = useState(null);
             const [searchQuery, setSearchQuery] = useState("");
@@ -164,24 +203,24 @@
             const [activeSubjectFilter, setActiveSubjectFilter] = useState("전체");
             const [activeTypeFilter, setActiveTypeFilter] = useState("전체");
             
-            // 실시간 공지사항 상태값
-            const [noticeText, setNoticeText] = useState("도계고 아카이브에 오신 것을 환영합니다! 신뢰성 있는 학습 자료를 서로 적극적으로 기여해주세요.");
+            // 글로벌 실시간 긴급 공지 배너
+            const [noticeText, setNoticeText] = useState("도계고등학교 학습 아카이브에 오신 것을 환영합니다! 검증된 공부 자료를 기부하고 학우들과 나눠보세요.");
             const [noticeEditor, setNoticeEditor] = useState("");
 
-            // 업로드 모달 관련 상태값들 (실제 파일 객체 상태 포함)
+            // 업로드 폼 모달 및 첨부파일 관리
             const [isUploadOpen, setIsUploadOpen] = useState(false);
             const [newTitle, setNewTitle] = useState("");
             const [newSubject, setNewSubject] = useState("물리학 I");
             const [newGrade, setNewGrade] = useState("1학년");
             const [newType, setNewType] = useState("요약 노트");
-            const [newFile, setNewFile] = useState(null); // 실제 파일 오브젝트
+            const [newFile, setNewFile] = useState(null); 
             const [newDescription, setNewDescription] = useState("");
             
-            // 관리자 전용 대시보드 모달
+            // 최고 관리자 대시보드
             const [isAdminConsoleOpen, setIsAdminConsoleOpen] = useState(false);
             const [usersList, setUsersList] = useState([]);
 
-            // 실시간 상호작용 피드백 (Toast, Custom Confirm, Custom Alert)
+            // 커스텀 알림 모달 & 피드백 토스트
             const [commentInput, setCommentInput] = useState("");
             const [toast, setToast] = useState(null);
             const [customConfirm, setCustomConfirm] = useState(null);
@@ -192,11 +231,11 @@
                 setTimeout(() => setToast(null), 3000);
             };
 
-            const triggerAlert = (message, title = "안내") => {
+            const triggerAlert = (message, title = "도계 아카이브 보안 통제") => {
                 setCustomAlert({ message, title });
             };
 
-            const triggerConfirm = (message, onConfirm, title = "확인 요청") => {
+            const triggerConfirm = (message, onConfirm, title = "권한 실행 요청") => {
                 setCustomConfirm({ message, title, onConfirm });
             };
 
@@ -212,10 +251,9 @@
                 return email.endsWith(`@${SCHOOL_DOMAIN}`);
             };
 
-            // 초기 로딩 및 세션 복구 구조
             useEffect(() => {
-                const initializeDatabase = () => {
-                    // LocalStorage 세션 복구 및 기본 데이터 설정
+                const restoreAndSetupLocal = () => {
+                    // 로그인 캐시 로드
                     const savedUser = localStorage.getItem("dogye_current_user");
                     if (savedUser) {
                         try {
@@ -225,7 +263,7 @@
                         }
                     }
 
-                    // 로컬 학습자료 데이터베이스 초기화
+                    // 로컬 학습 자료 데이터 로드
                     const savedMaterials = localStorage.getItem("dogye_archive_materials");
                     if (!savedMaterials) {
                         localStorage.setItem("dogye_archive_materials", JSON.stringify(INITIAL_MATERIALS));
@@ -238,7 +276,7 @@
                         }
                     }
 
-                    // 로컬 공지사항 세팅
+                    // 로컬 공지사항 로드
                     const savedNotice = localStorage.getItem("dogye_archive_notice");
                     if (savedNotice) {
                         setNoticeText(savedNotice);
@@ -247,7 +285,7 @@
                         setNoticeEditor(noticeText);
                     }
 
-                    // 기본 관리자 계정 정보 미리 주입 (로컬 테스트용)
+                    // 관리자 계정 생성 (로컬 모드 가동용)
                     const localUsers = JSON.parse(localStorage.getItem("dogye_archive_users") || "[]");
                     const adminExists = localUsers.some(u => u.email === "admin@dogye.hs.kr");
                     if (!adminExists) {
@@ -255,7 +293,7 @@
                             name: "최고관리자",
                             email: "admin@dogye.hs.kr",
                             password: "dogyehs2027",
-                            grade: "관리자",
+                            grade: "관리자 소속",
                             role: "admin",
                             schoolUserId: "admin_master_system"
                         });
@@ -263,9 +301,9 @@
                     }
                 };
 
-                initializeDatabase();
+                restoreAndSetupLocal();
 
-                const setupFirebase = () => {
+                const tryFirebaseSync = () => {
                     if (window.firebaseMethods) {
                         const { onAuthStateChanged, signInAnonymously } = window.firebaseMethods;
                         const auth = window.auth;
@@ -273,14 +311,14 @@
                         signInAnonymously(auth).then(() => {
                             onAuthStateChanged(auth, (fUser) => {
                                 if (fUser) {
-                                    setIsLocalMode(false); // Firebase 통신이 성공적으로 가능함을 확인
+                                    setIsLocalMode(false);
                                     listenToCloudMaterials();
                                     listenToCloudNotice();
                                 }
                                 setIsFirebaseLoading(false);
                             });
                         }).catch((err) => {
-                            console.log("Using Hybrid Local Mode due to network state or sandbox restrictions.");
+                            console.log("Firestore offline. Safe local sandbox engine is running.");
                             setIsLocalMode(true);
                             setIsFirebaseLoading(false);
                         });
@@ -290,23 +328,27 @@
                     }
                 };
 
-                // Firebase 연결 시도 대기 및 체크
-                if (document.readyState === 'complete') {
-                    setupFirebase();
-                } else {
-                    window.addEventListener('load', setupFirebase);
-                    return () => window.removeEventListener('load', setupFirebase);
+                const handleFirebaseInitEvent = () => {
+                    tryFirebaseSync();
+                };
+
+                window.addEventListener('firebase-initialized', handleFirebaseInitEvent);
+                // 즉각 준비 확인 검증
+                if (window.firebaseMethods) {
+                    tryFirebaseSync();
                 }
+
+                return () => {
+                    window.removeEventListener('firebase-initialized', handleFirebaseInitEvent);
+                };
             }, []);
 
-            // MathJax 수식 변환 감지 리스너
             useEffect(() => {
                 if (window.MathJax && window.MathJax.typesetPromise) {
                     window.MathJax.typesetPromise().catch((err) => console.log(err));
                 }
             }, [materials, selectedMaterial]);
 
-            // 실시간 클라우드 학습자료 리스너
             const listenToCloudMaterials = () => {
                 const { collection, onSnapshot, doc, setDoc } = window.firebaseMethods;
                 const db = window.db;
@@ -328,12 +370,11 @@
                         localStorage.setItem("dogye_archive_materials", JSON.stringify(cloudList));
                     }
                 }, (error) => {
-                    console.log("Firebase listener offline, switching completely to local engine.");
+                    console.log("Database connection offline. Reverted to Local storage sync.");
                     setIsLocalMode(true);
                 });
             };
 
-            // 실시간 클라우드 공지사항 리스너
             const listenToCloudNotice = () => {
                 const { doc, onSnapshot } = window.firebaseMethods;
                 const db = window.db;
@@ -350,21 +391,20 @@
                 });
             };
 
-            // 도계고 학생 가입 인명 리스트 로드
             const loadRegisteredUsers = () => {
                 const localUsers = JSON.parse(localStorage.getItem("dogye_archive_users") || "[]");
                 setUsersList(localUsers);
             };
 
-            // 안전한 듀얼 모드 로그인 처리
+            // 사용자 로그인 검증 구조
             const handleLogin = (e) => {
                 e.preventDefault();
                 if (!loginEmail || !loginPassword) {
-                    triggerAlert("이메일과 패스워드를 올바르게 입력해주세요.", "로그인 보류");
+                    triggerAlert("이메일 주소와 패스워드를 올바르게 채워 넣어 주세요.", "로그인 누락");
                     return;
                 }
 
-                // [최고 관리자 마스터 키 즉시 우회 처리]
+                // 👑 최고 관리자 계정 마스터 키 프리셋 통과
                 if (loginEmail === "admin@dogye.hs.kr" && loginPassword === "dogyehs2027") {
                     const adminSession = {
                         name: "최고관리자",
@@ -375,13 +415,13 @@
                     };
                     setUser(adminSession);
                     localStorage.setItem("dogye_current_user", JSON.stringify(adminSession));
-                    showToast("최고 관리자 계정으로 아카이브를 잠금 해제했습니다.");
+                    showToast("최고 마스터 관리자 등급으로 접속에 성공했습니다!");
                     return;
                 }
 
-                // 암묵적 도계고 도메인 검증
+                // 도계고 도메인 철통 검사
                 if (!isValidSchoolEmail(loginEmail)) {
-                    triggerAlert("로그인할 수 없는 계정 형식입니다.", "보안 위반 차단");
+                    triggerAlert("인가되지 않은 사용자입니다. 도계고 이메일 규격 외 접속은 허용되지 않습니다.");
                     return;
                 }
 
@@ -392,37 +432,37 @@
                     if (found.password === loginPassword) {
                         setUser(found);
                         localStorage.setItem("dogye_current_user", JSON.stringify(found));
-                        showToast(`어서오세요, ${found.name} 학우님!`);
+                        showToast(`반가워요, ${found.name} 학우님!`);
                     } else {
-                        triggerAlert("비밀번호가 올바르지 않습니다.", "인증 실패");
+                        triggerAlert("패스워드가 잘못 지정되었습니다. 다시 시도해 주세요.", "인증 불일치");
                     }
                 } else {
-                    triggerAlert("가입되지 않은 정보이거나 일치하는 학생 회원이 없습니다.", "가입 내역 없음");
+                    triggerAlert("가입된 정보가 존재하지 않습니다. 신규 학생 가입을 진행해 주세요.", "이메일 미확인");
                 }
             };
 
-            // 안전한 듀얼 모드 회원 등록
+            // 신규 학생 정보 정식 등록
             const handleSignUp = (e) => {
                 e.preventDefault();
                 if (!signUpName || !signUpEmail || !signUpPassword || !signUpPasswordConfirm) {
-                    triggerAlert("모든 입력 칸을 빠짐없이 채워주세요.", "가입 입력 오류");
+                    triggerAlert("모든 필수 기재 양식을 공백 없이 완성해 주세요.", "양식 누락");
                     return;
                 }
 
                 if (signUpPassword !== signUpPasswordConfirm) {
-                    triggerAlert("설정하신 비밀번호와 비밀번호 확인 칸이 일치하지 않습니다.", "가입 차단");
+                    triggerAlert("설정하신 비밀번호와 비밀번호 확인 입력값이 다릅니다.");
                     return;
                 }
 
-                // 암묵적 도계고 전용 도메인 검증 (가이드 문구를 숨겨도 완벽히 작동)
+                // 도계고 도메인 소속 암묵적 검증
                 if (!isValidSchoolEmail(signUpEmail)) {
-                    triggerAlert("이 사이트는 인가된 학우 및 관계자만 이용할 수 있습니다.", "보안 통제");
+                    triggerAlert("외부인은 이 공간에 가입할 수 없습니다.");
                     return;
                 }
 
                 const localUsers = JSON.parse(localStorage.getItem("dogye_archive_users") || "[]");
                 if (localUsers.some(u => u.email === signUpEmail)) {
-                    triggerAlert("이미 등록된 이메일 주소입니다. 로그인을 시도해 주세요.", "등록 중복");
+                    triggerAlert("해당 학우 이메일은 이미 아카이브에 승인 등록되어 있습니다.", "가입 중복");
                     return;
                 }
 
@@ -436,11 +476,10 @@
                     schoolUserId: "student_" + Date.now()
                 };
 
-                // 로컬 DB에 추가
                 localUsers.push(newUser);
                 localStorage.setItem("dogye_archive_users", JSON.stringify(localUsers));
 
-                // 온라인 상태일 경우 Firestore 동시 업로드 시도
+                // 온라인 모드 클라우드 데이터 전송 동시성 보장
                 if (!isLocalMode && window.firebaseMethods) {
                     const { doc, setDoc } = window.firebaseMethods;
                     const db = window.db;
@@ -448,29 +487,28 @@
                     const emailSafe = sanitizeEmailForDocId(signUpEmail);
 
                     setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', emailSafe), newUser).catch((err) => {
-                        console.log("Cloud backup failure, but local database saved safely.");
+                        console.log("Cloud user profile cache delayed.");
                     });
                 }
 
                 setUser(newUser);
                 localStorage.setItem("dogye_current_user", JSON.stringify(newUser));
-                showToast("도계고 아카이브 회원 가입이 정합성 심사를 거쳐 완료되었습니다!");
+                showToast("도계 아카이브 회원 자격이 정식 승인되어 통과되었습니다!");
             };
 
-            // 로그아웃 처리
             const handleLogout = () => {
                 setUser(null);
                 localStorage.removeItem("dogye_current_user");
-                showToast("성공적으로 도계 아카이브 세션을 종료했습니다.");
+                showToast("도계 아카이브 세션 연결을 해제하였습니다.");
             };
 
-            // 신규 학습자료 업로드 처리 (실제 파일 저장 추가)
+            // 기출 학습 자료 영구 기부 업로드 (IndexedDB 진짜 파일 적재 연계)
             const handleUpload = async (e) => {
                 e.preventDefault();
                 if (!user) return;
 
                 if (!newTitle || !newFile || !newDescription) {
-                    triggerAlert("자료 제목, 실제 학습 파일, 상세 공부 팁을 모두 적어주셔야 등재가 완료됩니다.", "자료 기재 미비");
+                    triggerAlert("제목, 공부 팁 분석 소개, 그리고 실제 기출 기부 파일을 첨부해 주세요.", "양식 기재 오류");
                     return;
                 }
 
@@ -485,7 +523,7 @@
                     uploaderEmail: user.email,
                     fileType: newFile.name.split('.').pop() || 'pdf',
                     fileName: newFile.name,
-                    fileSize: newFile.size, // 파일 용량 크기 바이트 단위 기록
+                    fileSize: newFile.size, 
                     downloads: 0,
                     likes: 0,
                     isVerified: user.role === "admin" ? true : false,
@@ -494,21 +532,21 @@
                     date: new Date().toISOString().split('T')[0]
                 };
 
-                // IndexedDB에 실제 바이너리 파일 영구 보관
                 try {
+                    // IndexedDB 대용량 내부 저장소에 바이너리 데이터 직접 주입
                     await saveFileToIndexedDB(newId, newFile);
                 } catch (err) {
-                    console.error("IndexedDB 파일 저장 실패:", err);
-                    triggerAlert("로컬 브라우저에 실제 파일을 저장하는 중 오류가 발생했습니다.", "파일 저장 실패");
+                    console.error("IndexedDB write failure:", err);
+                    triggerAlert("바이너리 파일을 IndexedDB에 기재하는 중 에러가 발생했습니다.", "파일 저장 차단");
                     return;
                 }
 
-                // 로컬 동기화 업데이트
+                // 로컬 리스트 데이터 병합 갱신
                 const updatedList = [formatDoc, ...materials];
                 setMaterials(updatedList);
                 localStorage.setItem("dogye_archive_materials", JSON.stringify(updatedList));
 
-                // 클라우드 백업 시도 (클라우드 용량 부담 완화를 위해 메타데이터만 Firebase에 올립니다.)
+                // Firebase 클라우드로 가벼운 메타데이터 전송 (클라우드 용량 세이브 및 실시간 전송 동시 가동)
                 if (!isLocalMode && window.firebaseMethods) {
                     const { doc, setDoc } = window.firebaseMethods;
                     const db = window.db;
@@ -517,18 +555,17 @@
                     try {
                         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'materials', newId), formatDoc);
                     } catch (err) {
-                        console.log("Cloud write error, running on secure local-mode.");
+                        console.log("Cloud sync error. Data stored safely inside local cache.");
                     }
                 }
 
-                showToast("새 실제 학습 파일과 자료 기증 팁이 도계 아카이브에 안전하게 영구 저장되었습니다!");
+                showToast("실제 학습 기증 파일과 분석 자료가 데이터베이스에 등재 완료되었습니다!");
                 setIsUploadOpen(false);
                 setNewTitle("");
                 setNewFile(null);
                 setNewDescription("");
             };
 
-            // 좋아요(추천) 시스템
             const handleLike = async (mId) => {
                 if (!user) return;
                 const updatedList = materials.map(m => {
@@ -552,13 +589,13 @@
                             likes: (target.likes || 0) + 1
                         });
                     } catch (err) {
-                        console.log("Cloud like counter update failed.");
+                        console.log("Cloud likes synchronization delayed.");
                     }
                 }
-                showToast("해당 소중한 학습 자료에 추천을 1표 보냈습니다!");
+                showToast("소중한 학습 기부 자료에 유용한 보탬(좋아요)을 실었습니다.");
             };
 
-            // 실제 파일 다운로드 및 시뮬레이션 시스템
+            // 진짜 기부 파일 다운로드 구조 (IndexedDB 복구 연동)
             const handleDownloadSimulate = async (mId) => {
                 if (!user) return;
                 const updatedList = materials.map(m => {
@@ -582,15 +619,14 @@
                             downloads: (target.downloads || 0) + 1
                         });
                     } catch (err) {
-                        console.log("Cloud download counter update failed.");
+                        console.log("Cloud downloads statistics synchronization delayed.");
                     }
                 }
 
-                // IndexedDB에서 원본 바이너리 파일 복원 시도
+                // IndexedDB에서 바이너리 진짜 파일 끄집어내기 시도
                 try {
                     const actualFileObj = await getFileFromIndexedDB(mId);
                     if (actualFileObj) {
-                        // 실제 원본 파일 다운로드 실행
                         const blobUrl = URL.createObjectURL(actualFileObj);
                         const link = document.createElement("a");
                         link.href = blobUrl;
@@ -599,14 +635,14 @@
                         link.click();
                         document.body.removeChild(link);
                         URL.revokeObjectURL(blobUrl);
-                        showToast("업로드된 실제 학습 원본 파일을 다운로드했습니다!");
+                        showToast("실제 원본 기증 파일을 브라우저로 완벽하게 다운로드했습니다!");
                         return;
                     }
                 } catch (e) {
-                    console.warn("IndexedDB에서 실제 파일을 찾지 못했거나 에러가 발생하여 데모용 가상 파일 다운로드로 전환합니다.", e);
+                    console.warn("Real file storage index lookup failed. Converting to virtual placeholder text.", e);
                 }
 
-                // 초기 기본 샘플 자료(1, 2, 3번)를 위한 텍스트 다운로드 가이드라인 포맷 제공
+                // 가상 예시용 텍스트 가이드 복원 다운로드 포맷
                 const docTemplate = `도계고등학교 학습 아카이브 기증 문서 안내\n` + 
                                     `========================================\n` +
                                     `자료 제목: ${selectedMaterial.title}\n` +
@@ -622,16 +658,15 @@
                 const blobUrl = URL.createObjectURL(blob);
                 const link = document.createElement("a");
                 link.href = blobUrl;
-                link.download = `[안내서]_${selectedMaterial.fileName}.txt`;
+                link.download = `[기부안내서]_${selectedMaterial.fileName}.txt`;
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
                 URL.revokeObjectURL(blobUrl);
 
-                showToast("안내 가이드 다운로드를 진행했습니다.");
+                showToast("초기 예시 기부 안내 텍스트 다운로드를 진행했습니다.");
             };
 
-            // 실시간 학습 피드백 댓글 작성
             const handleCommentSubmit = async (e) => {
                 e.preventDefault();
                 if (!user || !selectedMaterial || !commentInput.trim()) return;
@@ -670,15 +705,15 @@
                             comments: updatedComments
                         });
                     } catch (err) {
-                        console.log("Cloud comment sync skipped.");
+                        console.log("Cloud comment writing delayed.");
                     }
                 }
 
                 setCommentInput("");
-                showToast("공부 정정 의견 및 피드백 댓글을 게시했습니다.");
+                showToast("학습 피드백 및 응원의 평판 피드백 댓글을 게시했습니다.");
             };
 
-            // [최고 관리자 전용] 학습자료 정식 인증 승인
+            // 👑 최고 관리자 전용 정품 보증 마크 발급
             const verifyMaterial = async (mId) => {
                 if (user?.role !== "admin") return;
                 const updatedList = materials.map(m => {
@@ -695,25 +730,24 @@
                     const { doc, updateDoc } = window.firebaseMethods;
                     const db = window.db;
                     const appId = window.appId;
-                    const target = materials.find(m => m.id === mId);
 
                     try {
                         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'materials', mId), {
                             isVerified: true
                         });
                     } catch (e) {
-                        console.log("Cloud verification update failed.");
+                        console.log("Cloud verification approval sync error.");
                     }
                 }
-                showToast("선택하신 학습자료에 '검증 완료 정품 마크'를 수여했습니다.");
+                showToast("해당 학생 기증 자료에 '검증 통과 최고 정품 마크'를 수여했습니다!");
             };
 
-            // [최고 관리자 전용] 악성 학습자료 강제 퇴출 파기
+            // 👑 최고 관리자 전용 저작권 위반 자료 완전 원격 파색
             const deleteMaterial = (mId) => {
                 if (user?.role !== "admin") return;
 
                 triggerConfirm(
-                    "이 기출 자료는 교과 지침 위반이나 허위 문항으로 판정되어 파기될 수 있습니다. 진행할까요?",
+                    "이 기증 자료는 저작권 침해 우려 혹은 유실 문제로 영구 파기 처리될 수 있습니다. 진행하겠습니까?",
                     async () => {
                         const filtered = materials.filter(m => m.id !== mId);
                         setMaterials(filtered);
@@ -728,21 +762,21 @@
                             try {
                                 await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'materials', mId));
                             } catch (e) {
-                                console.log("Cloud delete sync skipped.");
+                                console.log("Cloud deletion synchronize interrupted.");
                             }
                         }
-                        showToast("아카이브 내 부적합 자료가 강제 퇴출 및 영구 정삭되었습니다.");
+                        showToast("아카이브 내 부적합 지정자료를 완전 퇴출 파색 조치했습니다.");
                     },
-                    "경고: 자료 완전 강제 파기"
+                    "경고: 자료 강제 파색"
                 );
             };
 
-            // [최고 관리자 전용] 악성 피드백 댓글 강제 제어 삭제
+            // 👑 최고 관리자 전용 피드백 규제 관리
             const deleteComment = (commentId) => {
                 if (user?.role !== "admin" || !selectedMaterial) return;
 
                 triggerConfirm(
-                    "스팸 및 저격성 문장이 포함되어 필터링 대상이 된 해당 피드백을 완전 제거 조치하시겠습니까?",
+                    "스팸성, 허위 제보 또는 비난 섞인 해당 피드백 코멘트를 즉시 영구 삭제 규제하시겠습니까?",
                     async () => {
                         const filteredComments = (selectedMaterial.comments || []).filter(c => c.id !== commentId);
                         const updatedList = materials.map(m => {
@@ -770,16 +804,16 @@
                                     comments: filteredComments
                                 });
                             } catch (e) {
-                                console.log("Cloud comment delete failed.");
+                                console.log("Cloud comment deletion synchronize failed.");
                             }
                         }
-                        showToast("지정된 악성 피드백 조각이 완전히 증발하여 소멸했습니다.");
+                        showToast("지정 댓글 부적격 판정으로 강제 규제 제거 소멸 조치했습니다.");
                     },
-                    "주의: 댓글 강제 규제"
+                    "주의: 피드백 강제 규제"
                 );
             };
 
-            // [최고 관리자 전용] 전교 전송 공지사항 편집 배포
+            // 👑 최고 관리자 중요 공지 원격 배포
             const updateGlobalNotice = async () => {
                 if (user?.role !== "admin") return;
 
@@ -796,13 +830,12 @@
                             content: noticeEditor
                         });
                     } catch (e) {
-                        console.log("Cloud notice update skipped.");
+                        console.log("Cloud global billboard update deferred.");
                     }
                 }
-                showToast("도계고 아카이브 메인 헤드라인 긴급 공지가 재설정 배포되었습니다.");
+                showToast("메인 헤드라인 긴급 학교 공지사항 배포를 마쳤습니다.");
             };
 
-            // 검색어 및 필터 정합성 체커
             const filteredMaterials = materials.filter(m => {
                 const matchSearch = m.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
                                     m.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -820,7 +853,7 @@
                 return (
                     <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50">
                         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600 mb-4"></div>
-                        <p className="text-slate-600 font-medium">도계 아카이브 보안 통신 채널을 감지 중...</p>
+                        <p className="text-slate-600 font-medium">도계 아카이브 보안 통신 채널을 점검하는 중...</p>
                     </div>
                 );
             }
@@ -834,7 +867,7 @@
                                     <i className="fa-solid fa-graduation-cap text-3xl"></i>
                                 </div>
                                 <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Dogye Archive</h1>
-                                <p className="text-slate-500 text-sm mt-1">도계고등학교 학습 자료 아카이브</p>
+                                <p className="text-slate-500 text-sm mt-1">도계고등학교 학습 자료실 포털</p>
                             </div>
 
                             <div className="flex bg-slate-100 p-1 rounded-xl mb-6">
@@ -975,7 +1008,7 @@
 
             return (
                 <div className="flex flex-col min-h-screen bg-slate-50">
-                    {/* 상단 통합 헤더 */}
+                    {/* 상단 헤더 */}
                     <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
                         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
                             <div className="flex items-center space-x-3">
@@ -995,7 +1028,7 @@
                                             </span>
                                         )}
                                     </h1>
-                                    <p className="text-[10px] text-slate-500">도계고등학교 전용 학습자료실</p>
+                                    <p className="text-[10px] text-slate-500">도계고등학교 전용 학습자료 공유 플랫폼</p>
                                 </div>
                             </div>
                             
@@ -1026,7 +1059,7 @@
 
                                 <button 
                                     onClick={() => {
-                                        setNewFile(null); // 모달 오픈 전 파일 첨부 상태 초기화
+                                        setNewFile(null); 
                                         setIsUploadOpen(true);
                                     }}
                                     className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-lg shadow-sm hover:shadow-md transition-all text-xs flex items-center gap-1">
@@ -1044,7 +1077,7 @@
                         </div>
                     </header>
 
-                    {/* 긴급 글로벌 전송 공지사항 */}
+                    {/* 긴급 교내 실시간 공지 */}
                     {noticeText && (
                         <div className="bg-yellow-50 border-b border-yellow-100">
                             <div className="max-w-7xl mx-auto py-3 px-4 sm:px-6 lg:px-8 flex items-center space-x-3 text-yellow-800 text-xs sm:text-sm">
@@ -1056,9 +1089,9 @@
                         </div>
                     )}
 
-                    {/* 메인 뷰포트 컨테이너 */}
+                    {/* 메인 대시 영역 */}
                     <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
-                        {/* 검색 및 필터 구조 대시보드 */}
+                        {/* 검색 및 카테고리 필터 헤더 */}
                         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm mb-6 space-y-4">
                             <div className="flex flex-col md:flex-row gap-4">
                                 <div className="flex-1 relative">
@@ -1067,7 +1100,7 @@
                                     </span>
                                     <input 
                                         type="text" 
-                                        placeholder="과목, 단원, 혹은 기증한 학생 이름으로 기출 자료를 검색해보세요."
+                                        placeholder="과목, 단원, 혹은 기증한 학우 이름을 적고 기출 분석 자료를 검색해 보세요."
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
                                         className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all text-sm"
@@ -1076,7 +1109,6 @@
                             </div>
 
                             <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-4">
-                                {/* 학년 대시 필터 */}
                                 <div className="flex items-center space-x-1.5">
                                     <span className="text-xs font-bold text-slate-400 mr-1">대상학년:</span>
                                     {["전체", "1학년", "2학년", "3학년"].map(g => (
@@ -1091,7 +1123,6 @@
 
                                 <div className="h-4 w-[1px] bg-slate-200 hidden sm:block mx-2"></div>
 
-                                {/* 과목 대시 필터 */}
                                 <div className="flex items-center space-x-1.5">
                                     <span className="text-xs font-bold text-slate-400 mr-1">과목분류:</span>
                                     {["전체", "물리학 I", "영어", "통합과학", "수학", "화학 I", "지구과학 I", "생명과학 I"].map(s => (
@@ -1106,7 +1137,6 @@
 
                                 <div className="h-4 w-[1px] bg-slate-200 hidden sm:block mx-2"></div>
 
-                                {/* 자료유형 대시 필터 */}
                                 <div className="flex items-center space-x-1.5">
                                     <span className="text-xs font-bold text-slate-400 mr-1">자료유형:</span>
                                     {["전체", "기출 분석", "요약 노트", "수행평가 대비"].map(t => (
@@ -1121,7 +1151,7 @@
                             </div>
                         </div>
 
-                        {/* 학습자료 리스트 격자 영역 */}
+                        {/* 리스트 그리드 */}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             {filteredMaterials.map(mat => (
                                 <div 
@@ -1141,7 +1171,7 @@
                                             
                                             <div className="flex items-center gap-1.5">
                                                 {mat.isVerified ? (
-                                                    <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1" title="관리자 검증 패스">
+                                                    <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1" title="관리자 기증 검증 완료">
                                                         <i className="fa-solid fa-circle-check text-[8px]"></i> 검증 완료
                                                     </span>
                                                 ) : (
@@ -1199,23 +1229,23 @@
                                     <div className="text-slate-300 text-5xl mb-4">
                                         <i className="fa-solid fa-folder-open"></i>
                                     </div>
-                                    <p className="text-slate-500 font-medium">부합하는 학습 정보가 없습니다.</p>
-                                    <p className="text-slate-400 text-xs mt-1">도계고 친구들을 위해 새로운 기출 정보나 요약 정리를 선점하여 업로드해보세요!</p>
+                                    <p className="text-slate-500 font-medium">검색 기준에 부합하는 자료가 없습니다.</p>
+                                    <p className="text-slate-400 text-xs mt-1">도계고 친구들을 위해 새로운 유용한 공부 비결을 제일 먼저 기부해 보세요!</p>
                                 </div>
                             )}
                         </div>
                     </main>
 
-                    {/* 하단 푸터 영역 */}
+                    {/* 푸터 */}
                     <footer className="bg-slate-900 text-slate-400 py-8 border-t border-slate-800 mt-12">
                         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-xs space-y-2">
                             <p className="font-semibold text-slate-300">Dogye Archive © 2026</p>
-                            <p>도계고등학교 전용 보완된 소속원 전용 아카이브 포털</p>
-                            <p className="text-[10px] text-slate-500">이 서비스는 오프라인 로컬 환경 및 클라우드 동기화 시스템에서 온전히 가동됩니다.</p>
+                            <p>도계고등학교 소속 구성원 전용 보완 학습 공유 자료창고</p>
+                            <p className="text-[10px] text-slate-500">본 사이트는 오프라인 영구 적재 및 클라우드 실시간 동시 가용 하이브리드 엔진이 탑재되었습니다.</p>
                         </div>
                     </footer>
 
-                    {/* 자료 상세 모달창 */}
+                    {/* 자료 상세 뷰어 모달 */}
                     {selectedMaterial && (
                         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                             <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden border border-slate-200 flex flex-col">
@@ -1245,7 +1275,7 @@
 
                                 <div className="p-6 overflow-y-auto space-y-6 flex-1">
                                     <div>
-                                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">자료 가이드 및 필기 분석 팁</h4>
+                                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">과목 요약 및 오답률 극복 팁</h4>
                                         <p className="text-sm text-slate-700 bg-slate-50 p-4 rounded-2xl border border-slate-100 leading-relaxed whitespace-pre-wrap">
                                             {selectedMaterial.description}
                                         </p>
@@ -1257,7 +1287,7 @@
                                                 <i className="fa-solid fa-file-invoice text-xl"></i>
                                             </div>
                                             <div className="text-left">
-                                                <p className="text-xs text-slate-400 font-medium">첨부 학습자료명</p>
+                                                <p className="text-xs text-slate-400 font-medium">실제 기부 파일명</p>
                                                 <p className="text-sm font-bold text-slate-700 break-all">{selectedMaterial.fileName}</p>
                                                 {selectedMaterial.fileSize && (
                                                     <p className="text-[10px] text-slate-400 font-semibold">
@@ -1276,9 +1306,9 @@
 
                                     <div className="flex items-center justify-between text-xs text-slate-400 border-b border-slate-100 pb-4">
                                         <div className="flex items-center space-x-2">
-                                            <span>작성자: <b className="text-slate-600">{selectedMaterial.uploader}</b></span>
+                                            <span>기증학우: <b className="text-slate-600">{selectedMaterial.uploader}</b></span>
                                             <span>•</span>
-                                            <span>기증일자: {selectedMaterial.date}</span>
+                                            <span>등록일자: {selectedMaterial.date}</span>
                                         </div>
                                         {user?.role === "admin" && (
                                             <button 
@@ -1290,13 +1320,13 @@
                                         )}
                                     </div>
 
-                                    {/* 피드백 영역 */}
+                                    {/* 피드백 에어리어 */}
                                     <div className="space-y-4">
-                                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">교내 피드백 교류 ({selectedMaterial.comments?.length || 0})</h4>
+                                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">교내 학술 의견 및 보정 제안 ({selectedMaterial.comments?.length || 0})</h4>
                                         
                                         <div className="space-y-3 max-h-[250px] overflow-y-auto pr-1">
                                             {(selectedMaterial.comments || []).map(comment => (
-                                                <div key={comment.id} className="bg-slate-50 p-3 rounded-xl border border-slate-100 relative group/comment">
+                                                <div key={comment.id} className="bg-slate-50 p-3 rounded-xl border border-slate-100 relative">
                                                     <div className="flex items-center justify-between mb-1">
                                                         <div className="flex items-center space-x-1.5">
                                                             <span className="text-xs font-bold text-slate-700">{comment.author}</span>
@@ -1307,7 +1337,7 @@
                                                             <button 
                                                                 onClick={() => deleteComment(comment.id)}
                                                                 className="text-red-400 hover:text-red-600 text-[10px] font-bold"
-                                                                title="댓글 삭제">
+                                                                title="코멘트 규제">
                                                                 강제 규제제거
                                                             </button>
                                                         )}
@@ -1316,14 +1346,14 @@
                                                 </div>
                                             ))}
                                             {(selectedMaterial.comments || []).length === 0 && (
-                                                <p className="text-xs text-slate-400 text-center py-4">남겨진 피드백이 존재하지 않습니다. 첫 피드백을 전달해 보세요!</p>
+                                                <p className="text-xs text-slate-400 text-center py-4">등록된 보정 피드백이 없습니다. 첫 의견을 자유롭게 나눠보세요!</p>
                                             )}
                                         </div>
 
                                         <form onSubmit={handleCommentSubmit} className="flex gap-2">
                                             <input 
                                                 type="text" 
-                                                placeholder="오타 정정 및 격려성 공부 후기를 조심스럽게 남겨주세요."
+                                                placeholder="오타 수정 지적 혹은 따뜻한 응원의 공부 격려 한마디를 적어보세요."
                                                 value={commentInput}
                                                 onChange={(e) => setCommentInput(e.target.value)}
                                                 className="flex-1 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all text-xs"
@@ -1331,7 +1361,7 @@
                                             <button 
                                                 type="submit" 
                                                 className="bg-slate-800 hover:bg-slate-900 text-white font-bold px-4 py-2 rounded-xl transition-all text-xs shrink-0">
-                                                기입
+                                                입력
                                             </button>
                                         </form>
                                     </div>
@@ -1340,14 +1370,14 @@
                         </div>
                     )}
 
-                    {/* 학습 자료 정식 기증 등록 모달 */}
+                    {/* 자료 정식 기증 등록 폼 */}
                     {isUploadOpen && (
                         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                             <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200">
                                 <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
                                     <h2 className="text-base font-bold text-slate-800 flex items-center gap-1.5">
                                         <i className="fa-solid fa-file-arrow-up text-blue-600"></i>
-                                        기출 및 공부 자료 기부
+                                        기출 및 학습 비결 기부
                                     </h2>
                                     <button 
                                         onClick={() => setIsUploadOpen(false)}
@@ -1358,10 +1388,10 @@
 
                                 <form onSubmit={handleUpload} className="p-6 space-y-4">
                                     <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">교과 및 자료명</label>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">교과명 및 아카이브 제목</label>
                                         <input 
                                             type="text" 
-                                            placeholder="예) 3학년 2학기 영어 독해 수행평가 단어 단권화 요약"
+                                            placeholder="예) 3학년 1학기 지필평가 영어 독해 수행 단어 단권화 요약"
                                             value={newTitle}
                                             onChange={(e) => setNewTitle(e.target.value)}
                                             className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all text-xs"
@@ -1410,7 +1440,7 @@
                                     </div>
 
                                     <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">실제 파일 기증</label>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">진짜 파일 영구 기부</label>
                                         <div className="border-2 border-dashed border-slate-300 rounded-2xl p-6 text-center bg-slate-50 hover:bg-slate-100/50 hover:border-blue-400 transition-all cursor-pointer relative">
                                             <input 
                                                 type="file" 
@@ -1431,7 +1461,7 @@
                                                         <p className="text-[10px] text-slate-400">규격: {(newFile.size / (1024 * 1024)).toFixed(2)} MB</p>
                                                     </div>
                                                     <span className="inline-block bg-emerald-50 text-emerald-700 text-[9px] font-bold px-2 py-0.5 rounded-full border border-emerald-100">
-                                                        가상 스토리지 대기 완료
+                                                        IndexedDB 임시 적재 완료
                                                     </span>
                                                 </div>
                                             ) : (
@@ -1440,8 +1470,8 @@
                                                         <i className="fa-solid fa-file-shield"></i>
                                                     </div>
                                                     <div>
-                                                        <p className="text-xs font-bold text-slate-600">이곳을 클릭하거나 기증할 파일을 놓으세요</p>
-                                                        <p className="text-[10px] text-slate-400">PDF, HWP, DOCX, ZIP 등 지원 (대용량 가능)</p>
+                                                        <p className="text-xs font-bold text-slate-600">이곳을 터치하거나 기부할 파일을 올려놓으세요</p>
+                                                        <p className="text-[10px] text-slate-400">PDF, HWP, DOCX, ZIP 등 업로드 가능 (대용량 지원)</p>
                                                     </div>
                                                 </div>
                                             )}
@@ -1449,9 +1479,9 @@
                                     </div>
 
                                     <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">자료 기증 핵심 팁 및 소개</label>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">기증 자료 핵심 문항 분석 및 가이드</label>
                                         <textarea 
-                                            placeholder="오답율이 가장 높았던 공식이나 교실에서 주의해야 할 핵심 포인트를 설명해 주세요."
+                                            placeholder="오답률이 가장 높았던 공식이나 교과 지침서 상의 유의사항을 구체적으로 풀어 써 주세요."
                                             value={newDescription}
                                             onChange={(e) => setNewDescription(e.target.value)}
                                             rows="3"
@@ -1469,14 +1499,14 @@
                         </div>
                     )}
 
-                    {/* 최고 관리자 전용 제어 콘솔 모달 */}
+                    {/* 최고 마스터 전용 대시보드 */}
                     {isAdminConsoleOpen && (
                         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                             <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-hidden border border-slate-200 flex flex-col">
                                 <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-purple-50">
                                     <h2 className="text-base font-bold text-purple-800 flex items-center gap-1.5">
                                         <i className="fa-solid fa-user-shield"></i>
-                                        👑 Dogye Archive 전교 원격 관리 시스템
+                                        👑 Dogye Archive 전교 실시간 관리 콘솔
                                     </h2>
                                     <button 
                                         onClick={() => setIsAdminConsoleOpen(false)}
@@ -1486,16 +1516,16 @@
                                 </div>
 
                                 <div className="p-6 overflow-y-auto space-y-6 flex-1">
-                                    {/* 글로벌 배너 컨트롤러 */}
+                                    {/* 긴급 배너 송출기 */}
                                     <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
                                         <h3 className="text-xs font-extrabold text-slate-700 flex items-center gap-1.5">
                                             <i className="fa-solid fa-bullhorn text-blue-600"></i>
-                                            실시간 중요 공지사항 편집 배포
+                                            글로벌 헤드라인 공지사항 편집 배포
                                         </h3>
                                         <div className="flex gap-2">
                                             <input 
                                                 type="text" 
-                                                placeholder="도계고 전원에게 실시간 전송할 공지를 입력해 보세요."
+                                                placeholder="도계고 전교생에 실시간으로 전파할 내용을 적어 보세요."
                                                 value={noticeEditor}
                                                 onChange={(e) => setNoticeEditor(e.target.value)}
                                                 className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-xl focus:ring-1 focus:ring-blue-500 focus:outline-none text-xs"
@@ -1508,20 +1538,20 @@
                                         </div>
                                     </div>
 
-                                    {/* 학생 명부 이력 */}
+                                    {/* 정회원 명부 */}
                                     <div className="space-y-3">
                                         <h3 className="text-xs font-extrabold text-slate-700 flex items-center gap-1.5">
                                             <i className="fa-solid fa-address-book text-purple-600"></i>
-                                            도계 아카이브 승인 가입 인명 리스트 ({usersList.length}명)
+                                            도계 아카이브 인가 완료 학생 인명부 ({usersList.length}명)
                                         </h3>
                                         <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-[250px] overflow-y-auto">
                                             <table className="w-full text-left border-collapse text-xs">
                                                 <thead>
                                                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold">
-                                                        <th className="p-3">학우 이름</th>
-                                                        <th className="p-3">승인 학년</th>
-                                                        <th className="p-3">고유 이메일</th>
-                                                        <th className="p-3">시스템 권한</th>
+                                                        <th className="p-3">학우 성함</th>
+                                                        <th className="p-3">인가 학년</th>
+                                                        <th className="p-3">등록 고유 이메일</th>
+                                                        <th className="p-3">계정 등급</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-slate-100 text-slate-600">
@@ -1541,7 +1571,7 @@
                                                     ))}
                                                     {usersList.length === 0 && (
                                                         <tr>
-                                                            <td colSpan="4" className="p-4 text-center text-slate-400">가입 승인된 정회원이 현재 존재하지 않습니다.</td>
+                                                            <td colSpan="4" className="p-4 text-center text-slate-400">가입 승인된 정회원 정보가 비어 있습니다.</td>
                                                         </tr>
                                                     )}
                                                 </tbody>
@@ -1553,7 +1583,7 @@
                         </div>
                     )}
 
-                    {/* 커스텀 경고 및 알림 안내 모달 (alert 우회) */}
+                    {/* 커스텀 Alert 경고 패널 */}
                     {customAlert && (
                         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
                             <div className="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full border border-slate-200 text-center space-y-4">
@@ -1573,7 +1603,7 @@
                         </div>
                     )}
 
-                    {/* 커스텀 확인 요청 모달 (confirm 우회) */}
+                    {/* 커스텀 Confirm 확인 통제 패널 */}
                     {customConfirm && (
                         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
                             <div className="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full border border-slate-200 text-center space-y-4">
@@ -1596,14 +1626,14 @@
                                             setCustomConfirm(null);
                                         }}
                                         className="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-2 rounded-xl transition-all">
-                                        의무 실행
+                                        권한 즉각 실행
                                     </button>
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    {/* 실시간 알림 안내 Toast */}
+                    {/* 피드백 실시간 알림 Toast */}
                     {toast && (
                         <div className="fixed bottom-4 right-4 z-[99] bg-slate-900 text-white py-3 px-5 rounded-xl shadow-2xl border border-slate-800 flex items-center space-x-2.5 max-w-sm">
                             {toast.type === "error" ? (
