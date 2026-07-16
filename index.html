@@ -426,7 +426,7 @@
                     if (found.password === loginPassword) {
                         setUser(found);
                         localStorage.setItem("dogye_current_user", JSON.stringify(found));
-                        showToast(`반가워요, ${found.name} 학우님!`);
+                        showToast(`반가워요, ${found.name}!`);
                     } else {
                         triggerAlert("패스워드가 잘못 지정되었습니다. 다시 시도해 주세요.", "인증 불일치");
                     }
@@ -1034,7 +1034,7 @@
                                                 👑 최고 관리자
                                             </span>
                                         )}
-                                        <span className="text-sm font-bold text-slate-800">{user.name} 학우님</span>
+                                        <span className="text-sm font-bold text-slate-800">{user.name}</span>
                                     </div>
                                     <span className="text-xs text-slate-400">{user.grade}</span>
                                 </div>
