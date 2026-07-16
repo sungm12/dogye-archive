@@ -1,0 +1,1687 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dogye Archive - 도계고등학교 학습 자료실</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React 및 ReactDOM CDN -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <!-- Babel CDN (JSX 컴파일) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- FontAwesome 아이콘 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- MathJax (수학 공식 렌더링용) -->
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <!-- Google Fonts - Noto Sans KR & Inter 적용 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2 family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans KR', sans-serif;
+            background-color: #f8fafc;
+        }
+        /* 스크롤바 커스텀 */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+<body class="min-h-screen text-slate-800">
+
+    <div id="root"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase 가짜 설정값 (배포 전까지는 오류 나지 않도록 로컬 Fallback이 자동 작동함)
+        const firebaseConfig = {
+            apiKey: "DUMMY_API_KEY_DOGYE_ARCHIVE_PLACEHOLDER",
+            authDomain: "dogye-archive.firebaseapp.com",
+            projectId: "dogye-archive",
+            storageBucket: "dogye-archive.firebasestorage.app",
+            messagingSenderId: "000000000000",
+            appId: "1:000000000000:web:dummyappid"
+        };
+
+        try {
+            const app = initializeApp(firebaseConfig);
+            const db = getFirestore(app);
+            const auth = getAuth(app);
+
+            window.db = db;
+            window.auth = auth;
+            window.appId = "dogye-archive-app";
+            window.firebaseMethods = {
+                signInAnonymously,
+                onAuthStateChanged,
+                doc,
+                getDoc,
+                setDoc,
+                updateDoc,
+                deleteDoc,
+                collection,
+                addDoc,
+                onSnapshot
+            };
+            window.dispatchEvent(new Event('firebase-initialized'));
+        } catch (err) {
+            console.warn("Firebase initialization skipped or failed. Hybrid Local Mode is activated automatically.", err);
+            window.firebaseMethods = null;
+            window.dispatchEvent(new Event('firebase-initialized'));
+        }
+    </script>
+
+    <script type="text/babel">
+        // 브라우저 내부 대용량 스토리지 IndexedDB 초기화 및 제어 함수
+        const DB_NAME = "DogyeArchiveDB";
+        const STORE_NAME = "materials_files";
+
+        function initIndexedDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, 1);
+                request.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(STORE_NAME)) {
+                        db.createObjectStore(STORE_NAME);
+                    }
+                };
+                request.onsuccess = (e) => resolve(e.target.result);
+                request.onerror = (e) => reject(e.target.error);
+            });
+        }
+
+        function saveFileToIndexedDB(id, file) {
+            return initIndexedDB().then(db => {
+                return new Promise((resolve, reject) => {
+                    const transaction = db.transaction(STORE_NAME, "readwrite");
+                    const store = transaction.objectStore(STORE_NAME);
+                    const request = store.put(file, id);
+                    request.onsuccess = () => resolve();
+                    request.onerror = (e) => reject(e.target.error);
+                });
+            });
+        }
+
+        function getFileFromIndexedDB(id) {
+            return initIndexedDB().then(db => {
+                return new Promise((resolve, reject) => {
+                    const transaction = db.transaction(STORE_NAME, "readonly");
+                    const store = transaction.objectStore(STORE_NAME);
+                    const request = store.get(id);
+                    request.onsuccess = (e) => resolve(e.target.result);
+                    request.onerror = (e) => reject(e.target.error);
+                });
+            });
+        }
+
+        const { useState, useEffect, useRef } = React;
+
+        // 도계고등학교 이메일 인증용 고정 도메인
+        const SCHOOL_DOMAIN = "dogye.hs.kr";
+
+        // 기본 학습자료 템플릿 데이터
+        const INITIAL_MATERIALS = [
+            {
+                id: "1",
+                title: "도계고 2학년 1학기 중간고사 물리학I 기출 경향 및 킬러 문항 분석",
+                grade: "2학년",
+                subject: "물리학 I",
+                type: "기출 분석",
+                uploader: "전성민",
+                uploaderEmail: "sungmin@dogye.hs.kr",
+                fileType: "pdf",
+                fileName: "Dogye_Physics1_Midterm_Analysis.pdf",
+                fileSize: 1845210, // 약 1.76 MB
+                downloads: 48,
+                likes: 18,
+                isVerified: true,
+                description: "작년 도계고 기출 문항 중 역학적 에너지 보존 법칙인 $E_k + E_p = \\text{const}$ 파트의 변형 문항을 분석하고, 올해 출제 예상 범위의 변형 기출 3선까지 함께 수록해 둔 오답 정리 노트입니다.",
+                comments: [
+                    { id: "c1", author: "김민혁", text: "역학 파트 변형 공식 정리 대박입니다... 물리 수행평가 공부할 때 엄청 도움되네요!", date: "2026-07-14" },
+                    { id: "c2", author: "이지호", text: "도계고 기출 경향이랑 거의 일치하네요 ㅠㅠ 올려주셔서 감사해요!", date: "2026-07-15" }
+                ],
+                date: "2026-07-12"
+            },
+            {
+                id: "2",
+                title: "3학년 영어 독해와 작문 수행평가 만점 대비 에세이 가이드 및 템플릿",
+                grade: "3학년",
+                subject: "영어",
+                type: "수행평가 대비",
+                uploader: "이지은",
+                uploaderEmail: "jieun@dogye.hs.kr",
+                fileType: "hwp",
+                fileName: "Dogye_English_Essay_Template.hwp",
+                fileSize: 412500, // 약 402 KB
+                downloads: 134,
+                likes: 52,
+                isVerified: false,
+                description: "고득점 에세이 구조를 쉽게 짤 수 있도록 설계한 서론-본론-결론 만능 템플릿입니다. 문법적 오류를 미연에 방지하는 핵심 필수 구문 10가지가 함께 포함되어 있습니다.",
+                comments: [
+                    { id: "c3", author: "박지원", text: "내일모레 제출인데 이 구조 덕분에 틀이 드디어 잡혔습니다! 구원자이십니다.", date: "2026-07-15" }
+                ],
+                date: "2026-07-14"
+            },
+            {
+                id: "3",
+                title: "통합과학 유전 및 생명과학 파트 개념 단권화 요약 정리본",
+                grade: "1학년",
+                subject: "통합과학",
+                type: "요약 노트",
+                uploader: "박준우",
+                uploaderEmail: "junwoo@dogye.hs.kr",
+                fileType: "pdf",
+                fileName: "Dogye_Science_Genetics_Summary.pdf",
+                fileSize: 2541022, // 약 2.42 MB
+                downloads: 89,
+                likes: 31,
+                isVerified: true,
+                description: "통합과학 유전 파트(멘델의 법칙, 가계도 기초 해석) 핵심 단권화 필기노트입니다. 까다로운 빈출 OX 보기만 모아 해설을 꼼꼼하게 정리해두었습니다.",
+                comments: [],
+                date: "2026-07-10"
+            }
+        ];
+
+        function App() {
+            const [user, setUser] = useState(null); 
+            const [isLoginView, setIsLoginView] = useState(true);
+            const [isLocalMode, setIsLocalMode] = useState(true); // 기본적으로 로컬 모드로 시작하여 오프라인 지원
+            const [isFirebaseLoading, setIsFirebaseLoading] = useState(true);
+            
+            // 회원가입 폼 상태값들
+            const [signUpEmail, setSignUpEmail] = useState("");
+            const [signUpPassword, setSignUpPassword] = useState("");
+            const [signUpPasswordConfirm, setSignUpPasswordConfirm] = useState("");
+            const [signUpName, setSignUpName] = useState("");
+            const [signUpGrade, setSignUpGrade] = useState("1학년");
+            
+            // 로그인 폼 상태값들
+            const [loginEmail, setLoginEmail] = useState("");
+            const [loginPassword, setLoginPassword] = useState("");
+            
+            // 메인 학습 자료 리스트 및 필터 상태값들
+            const [materials, setMaterials] = useState([]);
+            const [selectedMaterial, setSelectedMaterial] = useState(null);
+            const [searchQuery, setSearchQuery] = useState("");
+            const [activeGradeFilter, setActiveGradeFilter] = useState("전체");
+            const [activeSubjectFilter, setActiveSubjectFilter] = useState("전체");
+            const [activeTypeFilter, setActiveTypeFilter] = useState("전체");
+            
+            // 실시간 공지사항 상태값
+            const [noticeText, setNoticeText] = useState("도계고 아카이브에 오신 것을 환영합니다! 신뢰성 있는 학습 자료를 서로 적극적으로 기여해주세요.");
+            const [noticeEditor, setNoticeEditor] = useState("");
+
+            // 업로드 모달 관련 상태값들 (실제 파일 객체 상태 포함)
+            const [isUploadOpen, setIsUploadOpen] = useState(false);
+            const [newTitle, setNewTitle] = useState("");
+            const [newSubject, setNewSubject] = useState("물리학 I");
+            const [newGrade, setNewGrade] = useState("1학년");
+            const [newType, setNewType] = useState("요약 노트");
+            const [newFile, setNewFile] = useState(null); // 실제 파일 오브젝트
+            const [newDescription, setNewDescription] = useState("");
+            
+            // 관리자 전용 대시보드 모달
+            const [isAdminConsoleOpen, setIsAdminConsoleOpen] = useState(false);
+            const [usersList, setUsersList] = useState([]);
+
+            // 실시간 상호작용 피드백 (Toast, Custom Confirm, Custom Alert)
+            const [commentInput, setCommentInput] = useState("");
+            const [toast, setToast] = useState(null);
+            const [customConfirm, setCustomConfirm] = useState(null);
+            const [customAlert, setCustomAlert] = useState(null);
+
+            const showToast = (message, type = "success") => {
+                setToast({ message, type });
+                setTimeout(() => setToast(null), 3000);
+            };
+
+            const triggerAlert = (message, title = "안내") => {
+                setCustomAlert({ message, title });
+            };
+
+            const triggerConfirm = (message, onConfirm, title = "확인 요청") => {
+                setCustomConfirm({ message, title, onConfirm });
+            };
+
+            const sanitizeEmailForDocId = (email) => {
+                return email.replace(/\./g, "_");
+            };
+
+            const isAdministrator = (email) => {
+                return email === "sungmin@dogye.hs.kr" || email === "admin@dogye.hs.kr";
+            };
+
+            const isValidSchoolEmail = (email) => {
+                return email.endsWith(`@${SCHOOL_DOMAIN}`);
+            };
+
+            // 초기 로딩 및 세션 복구 구조
+            useEffect(() => {
+                const initializeDatabase = () => {
+                    // LocalStorage 세션 복구 및 기본 데이터 설정
+                    const savedUser = localStorage.getItem("dogye_current_user");
+                    if (savedUser) {
+                        try {
+                            setUser(JSON.parse(savedUser));
+                        } catch (e) {
+                            localStorage.removeItem("dogye_current_user");
+                        }
+                    }
+
+                    // 로컬 학습자료 데이터베이스 초기화
+                    const savedMaterials = localStorage.getItem("dogye_archive_materials");
+                    if (!savedMaterials) {
+                        localStorage.setItem("dogye_archive_materials", JSON.stringify(INITIAL_MATERIALS));
+                        setMaterials(INITIAL_MATERIALS);
+                    } else {
+                        try {
+                            setMaterials(JSON.parse(savedMaterials));
+                        } catch (e) {
+                            setMaterials(INITIAL_MATERIALS);
+                        }
+                    }
+
+                    // 로컬 공지사항 세팅
+                    const savedNotice = localStorage.getItem("dogye_archive_notice");
+                    if (savedNotice) {
+                        setNoticeText(savedNotice);
+                        setNoticeEditor(savedNotice);
+                    } else {
+                        setNoticeEditor(noticeText);
+                    }
+
+                    // 기본 관리자 계정 정보 미리 주입 (로컬 테스트용)
+                    const localUsers = JSON.parse(localStorage.getItem("dogye_archive_users") || "[]");
+                    const adminExists = localUsers.some(u => u.email === "admin@dogye.hs.kr");
+                    if (!adminExists) {
+                        localUsers.push({
+                            name: "최고관리자",
+                            email: "admin@dogye.hs.kr",
+                            password: "dogyehs2027",
+                            grade: "관리자",
+                            role: "admin",
+                            schoolUserId: "admin_master_system"
+                        });
+                        localStorage.setItem("dogye_archive_users", JSON.stringify(localUsers));
+                    }
+                };
+
+                initializeDatabase();
+
+                const setupFirebase = () => {
+                    if (window.firebaseMethods) {
+                        const { onAuthStateChanged, signInAnonymously } = window.firebaseMethods;
+                        const auth = window.auth;
+
+                        signInAnonymously(auth).then(() => {
+                            onAuthStateChanged(auth, (fUser) => {
+                                if (fUser) {
+                                    setIsLocalMode(false); // Firebase 통신이 성공적으로 가능함을 확인
+                                    listenToCloudMaterials();
+                                    listenToCloudNotice();
+                                }
+                                setIsFirebaseLoading(false);
+                            });
+                        }).catch((err) => {
+                            console.log("Using Hybrid Local Mode due to network state or sandbox restrictions.");
+                            setIsLocalMode(true);
+                            setIsFirebaseLoading(false);
+                        });
+                    } else {
+                        setIsLocalMode(true);
+                        setIsFirebaseLoading(false);
+                    }
+                };
+
+                // Firebase 연결 시도 대기 및 체크
+                if (document.readyState === 'complete') {
+                    setupFirebase();
+                } else {
+                    window.addEventListener('load', setupFirebase);
+                    return () => window.removeEventListener('load', setupFirebase);
+                }
+            }, []);
+
+            // MathJax 수식 변환 감지 리스너
+            useEffect(() => {
+                if (window.MathJax && window.MathJax.typesetPromise) {
+                    window.MathJax.typesetPromise().catch((err) => console.log(err));
+                }
+            }, [materials, selectedMaterial]);
+
+            // 실시간 클라우드 학습자료 리스너
+            const listenToCloudMaterials = () => {
+                const { collection, onSnapshot, doc, setDoc } = window.firebaseMethods;
+                const db = window.db;
+                const appId = window.appId;
+
+                const materialsRef = collection(db, 'artifacts', appId, 'public', 'data', 'materials');
+                onSnapshot(materialsRef, (snapshot) => {
+                    if (snapshot.empty) {
+                        INITIAL_MATERIALS.forEach(async (item) => {
+                            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'materials', item.id), item);
+                        });
+                    } else {
+                        const cloudList = [];
+                        snapshot.forEach((d) => {
+                            cloudList.push({ ...d.data(), id: d.id });
+                        });
+                        cloudList.sort((a, b) => b.date.localeCompare(a.date));
+                        setMaterials(cloudList);
+                        localStorage.setItem("dogye_archive_materials", JSON.stringify(cloudList));
+                    }
+                }, (error) => {
+                    console.log("Firebase listener offline, switching completely to local engine.");
+                    setIsLocalMode(true);
+                });
+            };
+
+            // 실시간 클라우드 공지사항 리스너
+            const listenToCloudNotice = () => {
+                const { doc, onSnapshot } = window.firebaseMethods;
+                const db = window.db;
+                const appId = window.appId;
+
+                const noticeRef = doc(db, 'artifacts', appId, 'public', 'notice');
+                onSnapshot(noticeRef, (snapshot) => {
+                    if (snapshot.exists()) {
+                        const data = snapshot.data();
+                        setNoticeText(data.content || "");
+                        setNoticeEditor(data.content || "");
+                        localStorage.setItem("dogye_archive_notice", data.content || "");
+                    }
+                });
+            };
+
+            // 도계고 학생 가입 인명 리스트 로드
+            const loadRegisteredUsers = () => {
+                const localUsers = JSON.parse(localStorage.getItem("dogye_archive_users") || "[]");
+                setUsersList(localUsers);
+            };
+
+            // 안전한 듀얼 모드 로그인 처리
+            const handleLogin = (e) => {
+                e.preventDefault();
+                if (!loginEmail || !loginPassword) {
+                    triggerAlert("이메일과 패스워드를 올바르게 입력해주세요.", "로그인 보류");
+                    return;
+                }
+
+                // [최고 관리자 마스터 키 즉시 우회 처리]
+                if (loginEmail === "admin@dogye.hs.kr" && loginPassword === "dogyehs2027") {
+                    const adminSession = {
+                        name: "최고관리자",
+                        email: "admin@dogye.hs.kr",
+                        grade: "관리자 소속",
+                        role: "admin",
+                        schoolUserId: "admin_master_system"
+                    };
+                    setUser(adminSession);
+                    localStorage.setItem("dogye_current_user", JSON.stringify(adminSession));
+                    showToast("최고 관리자 계정으로 아카이브를 잠금 해제했습니다.");
+                    return;
+                }
+
+                // 암묵적 도계고 도메인 검증
+                if (!isValidSchoolEmail(loginEmail)) {
+                    triggerAlert("로그인할 수 없는 계정 형식입니다.", "보안 위반 차단");
+                    return;
+                }
+
+                const localUsers = JSON.parse(localStorage.getItem("dogye_archive_users") || "[]");
+                const found = localUsers.find(u => u.email === loginEmail);
+
+                if (found) {
+                    if (found.password === loginPassword) {
+                        setUser(found);
+                        localStorage.setItem("dogye_current_user", JSON.stringify(found));
+                        showToast(`어서오세요, ${found.name} 학우님!`);
+                    } else {
+                        triggerAlert("비밀번호가 올바르지 않습니다.", "인증 실패");
+                    }
+                } else {
+                    triggerAlert("가입되지 않은 정보이거나 일치하는 학생 회원이 없습니다.", "가입 내역 없음");
+                }
+            };
+
+            // 안전한 듀얼 모드 회원 등록
+            const handleSignUp = (e) => {
+                e.preventDefault();
+                if (!signUpName || !signUpEmail || !signUpPassword || !signUpPasswordConfirm) {
+                    triggerAlert("모든 입력 칸을 빠짐없이 채워주세요.", "가입 입력 오류");
+                    return;
+                }
+
+                if (signUpPassword !== signUpPasswordConfirm) {
+                    triggerAlert("설정하신 비밀번호와 비밀번호 확인 칸이 일치하지 않습니다.", "가입 차단");
+                    return;
+                }
+
+                // 암묵적 도계고 전용 도메인 검증 (가이드 문구를 숨겨도 완벽히 작동)
+                if (!isValidSchoolEmail(signUpEmail)) {
+                    triggerAlert("이 사이트는 인가된 학우 및 관계자만 이용할 수 있습니다.", "보안 통제");
+                    return;
+                }
+
+                const localUsers = JSON.parse(localStorage.getItem("dogye_archive_users") || "[]");
+                if (localUsers.some(u => u.email === signUpEmail)) {
+                    triggerAlert("이미 등록된 이메일 주소입니다. 로그인을 시도해 주세요.", "등록 중복");
+                    return;
+                }
+
+                const resolvedRole = isAdministrator(signUpEmail) ? "admin" : "student";
+                const newUser = {
+                    name: signUpName,
+                    email: signUpEmail,
+                    password: signUpPassword,
+                    grade: signUpGrade,
+                    role: resolvedRole,
+                    schoolUserId: "student_" + Date.now()
+                };
+
+                // 로컬 DB에 추가
+                localUsers.push(newUser);
+                localStorage.setItem("dogye_archive_users", JSON.stringify(localUsers));
+
+                // 온라인 상태일 경우 Firestore 동시 업로드 시도
+                if (!isLocalMode && window.firebaseMethods) {
+                    const { doc, setDoc } = window.firebaseMethods;
+                    const db = window.db;
+                    const appId = window.appId;
+                    const emailSafe = sanitizeEmailForDocId(signUpEmail);
+
+                    setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', emailSafe), newUser).catch((err) => {
+                        console.log("Cloud backup failure, but local database saved safely.");
+                    });
+                }
+
+                setUser(newUser);
+                localStorage.setItem("dogye_current_user", JSON.stringify(newUser));
+                showToast("도계고 아카이브 회원 가입이 정합성 심사를 거쳐 완료되었습니다!");
+            };
+
+            // 로그아웃 처리
+            const handleLogout = () => {
+                setUser(null);
+                localStorage.removeItem("dogye_current_user");
+                showToast("성공적으로 도계 아카이브 세션을 종료했습니다.");
+            };
+
+            // 신규 학습자료 업로드 처리 (실제 파일 저장 추가)
+            const handleUpload = async (e) => {
+                e.preventDefault();
+                if (!user) return;
+
+                if (!newTitle || !newFile || !newDescription) {
+                    triggerAlert("자료 제목, 실제 학습 파일, 상세 공부 팁을 모두 적어주셔야 등재가 완료됩니다.", "자료 기재 미비");
+                    return;
+                }
+
+                const newId = String(Date.now());
+                const formatDoc = {
+                    id: newId,
+                    title: newTitle,
+                    grade: newGrade,
+                    subject: newSubject,
+                    type: newType,
+                    uploader: user.name,
+                    uploaderEmail: user.email,
+                    fileType: newFile.name.split('.').pop() || 'pdf',
+                    fileName: newFile.name,
+                    fileSize: newFile.size, // 파일 용량 크기 바이트 단위 기록
+                    downloads: 0,
+                    likes: 0,
+                    isVerified: user.role === "admin" ? true : false,
+                    description: newDescription,
+                    comments: [],
+                    date: new Date().toISOString().split('T')[0]
+                };
+
+                // IndexedDB에 실제 바이너리 파일 영구 보관
+                try {
+                    await saveFileToIndexedDB(newId, newFile);
+                } catch (err) {
+                    console.error("IndexedDB 파일 저장 실패:", err);
+                    triggerAlert("로컬 브라우저에 실제 파일을 저장하는 중 오류가 발생했습니다.", "파일 저장 실패");
+                    return;
+                }
+
+                // 로컬 동기화 업데이트
+                const updatedList = [formatDoc, ...materials];
+                setMaterials(updatedList);
+                localStorage.setItem("dogye_archive_materials", JSON.stringify(updatedList));
+
+                // 클라우드 백업 시도 (클라우드 용량 부담 완화를 위해 메타데이터만 Firebase에 올립니다.)
+                if (!isLocalMode && window.firebaseMethods) {
+                    const { doc, setDoc } = window.firebaseMethods;
+                    const db = window.db;
+                    const appId = window.appId;
+
+                    try {
+                        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'materials', newId), formatDoc);
+                    } catch (err) {
+                        console.log("Cloud write error, running on secure local-mode.");
+                    }
+                }
+
+                showToast("새 실제 학습 파일과 자료 기증 팁이 도계 아카이브에 안전하게 영구 저장되었습니다!");
+                setIsUploadOpen(false);
+                setNewTitle("");
+                setNewFile(null);
+                setNewDescription("");
+            };
+
+            // 좋아요(추천) 시스템
+            const handleLike = async (mId) => {
+                if (!user) return;
+                const updatedList = materials.map(m => {
+                    if (m.id === mId) {
+                        return { ...m, likes: (m.likes || 0) + 1 };
+                    }
+                    return m;
+                });
+
+                setMaterials(updatedList);
+                localStorage.setItem("dogye_archive_materials", JSON.stringify(updatedList));
+
+                if (!isLocalMode && window.firebaseMethods) {
+                    const { doc, updateDoc } = window.firebaseMethods;
+                    const db = window.db;
+                    const appId = window.appId;
+                    const target = materials.find(m => m.id === mId);
+
+                    try {
+                        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'materials', mId), {
+                            likes: (target.likes || 0) + 1
+                        });
+                    } catch (err) {
+                        console.log("Cloud like counter update failed.");
+                    }
+                }
+                showToast("해당 소중한 학습 자료에 추천을 1표 보냈습니다!");
+            };
+
+            // 실제 파일 다운로드 및 시뮬레이션 시스템
+            const handleDownloadSimulate = async (mId) => {
+                if (!user) return;
+                const updatedList = materials.map(m => {
+                    if (m.id === mId) {
+                        return { ...m, downloads: (m.downloads || 0) + 1 };
+                    }
+                    return m;
+                });
+
+                setMaterials(updatedList);
+                localStorage.setItem("dogye_archive_materials", JSON.stringify(updatedList));
+
+                if (!isLocalMode && window.firebaseMethods) {
+                    const { doc, updateDoc } = window.firebaseMethods;
+                    const db = window.db;
+                    const appId = window.appId;
+                    const target = materials.find(m => m.id === mId);
+
+                    try {
+                        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'materials', mId), {
+                            downloads: (target.downloads || 0) + 1
+                        });
+                    } catch (err) {
+                        console.log("Cloud download counter update failed.");
+                    }
+                }
+
+                // IndexedDB에서 원본 바이너리 파일 복원 시도
+                try {
+                    const actualFileObj = await getFileFromIndexedDB(mId);
+                    if (actualFileObj) {
+                        // 실제 원본 파일 다운로드 실행
+                        const blobUrl = URL.createObjectURL(actualFileObj);
+                        const link = document.createElement("a");
+                        link.href = blobUrl;
+                        link.download = actualFileObj.name;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        URL.revokeObjectURL(blobUrl);
+                        showToast("업로드된 실제 학습 원본 파일을 다운로드했습니다!");
+                        return;
+                    }
+                } catch (e) {
+                    console.warn("IndexedDB에서 실제 파일을 찾지 못했거나 에러가 발생하여 데모용 가상 파일 다운로드로 전환합니다.", e);
+                }
+
+                // 초기 기본 샘플 자료(1, 2, 3번)를 위한 텍스트 다운로드 가이드라인 포맷 제공
+                const docTemplate = `도계고등학교 학습 아카이브 기증 문서 안내\n` + 
+                                    `========================================\n` +
+                                    `자료 제목: ${selectedMaterial.title}\n` +
+                                    `작성 학우: ${selectedMaterial.uploader} (${selectedMaterial.uploaderEmail})\n` +
+                                    `과목 분류: ${selectedMaterial.subject} (${selectedMaterial.type})\n` +
+                                    `작성 일자: ${selectedMaterial.date}\n\n` +
+                                    `[소개 및 핵심 팁]\n` +
+                                    `${selectedMaterial.description}\n\n` +
+                                    `* 본 파일은 초기 기본 세팅 샘플이거나 IndexedDB 유실로 인해 생성된 텍스트 대체 안내서입니다.\n` +
+                                    `* 학생들이 업로드한 신규 실제 학습 자료는 업로드하신 실제 확장자 및 온전한 파일 규격 그대로 완벽하게 다운로드됩니다.`;
+
+                const blob = new Blob([docTemplate], { type: "text/plain;charset=utf-8" });
+                const blobUrl = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.href = blobUrl;
+                link.download = `[안내서]_${selectedMaterial.fileName}.txt`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(blobUrl);
+
+                showToast("안내 가이드 다운로드를 진행했습니다.");
+            };
+
+            // 실시간 학습 피드백 댓글 작성
+            const handleCommentSubmit = async (e) => {
+                e.preventDefault();
+                if (!user || !selectedMaterial || !commentInput.trim()) return;
+
+                const newComment = {
+                    id: String(Date.now()),
+                    author: user.name,
+                    authorEmail: user.email,
+                    text: commentInput.trim(),
+                    date: new Date().toISOString().split('T')[0]
+                };
+
+                const updatedComments = [...(selectedMaterial.comments || []), newComment];
+                const updatedList = materials.map(m => {
+                    if (m.id === selectedMaterial.id) {
+                        return { ...m, comments: updatedComments };
+                    }
+                    return m;
+                });
+
+                setMaterials(updatedList);
+                localStorage.setItem("dogye_archive_materials", JSON.stringify(updatedList));
+
+                const updatedTarget = updatedList.find(m => m.id === selectedMaterial.id);
+                if (updatedTarget) {
+                    setSelectedMaterial(updatedTarget);
+                }
+
+                if (!isLocalMode && window.firebaseMethods) {
+                    const { doc, updateDoc } = window.firebaseMethods;
+                    const db = window.db;
+                    const appId = window.appId;
+
+                    try {
+                        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'materials', selectedMaterial.id), {
+                            comments: updatedComments
+                        });
+                    } catch (err) {
+                        console.log("Cloud comment sync skipped.");
+                    }
+                }
+
+                setCommentInput("");
+                showToast("공부 정정 의견 및 피드백 댓글을 게시했습니다.");
+            };
+
+            // [최고 관리자 전용] 학습자료 정식 인증 승인
+            const verifyMaterial = async (mId) => {
+                if (user?.role !== "admin") return;
+                const updatedList = materials.map(m => {
+                    if (m.id === mId) {
+                        return { ...m, isVerified: true };
+                    }
+                    return m;
+                });
+
+                setMaterials(updatedList);
+                localStorage.setItem("dogye_archive_materials", JSON.stringify(updatedList));
+
+                if (!isLocalMode && window.firebaseMethods) {
+                    const { doc, updateDoc } = window.firebaseMethods;
+                    const db = window.db;
+                    const appId = window.appId;
+                    const target = materials.find(m => m.id === mId);
+
+                    try {
+                        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'materials', mId), {
+                            isVerified: true
+                        });
+                    } catch (e) {
+                        console.log("Cloud verification update failed.");
+                    }
+                }
+                showToast("선택하신 학습자료에 '검증 완료 정품 마크'를 수여했습니다.");
+            };
+
+            // [최고 관리자 전용] 악성 학습자료 강제 퇴출 파기
+            const deleteMaterial = (mId) => {
+                if (user?.role !== "admin") return;
+
+                triggerConfirm(
+                    "이 기출 자료는 교과 지침 위반이나 허위 문항으로 판정되어 파기될 수 있습니다. 진행할까요?",
+                    async () => {
+                        const filtered = materials.filter(m => m.id !== mId);
+                        setMaterials(filtered);
+                        localStorage.setItem("dogye_archive_materials", JSON.stringify(filtered));
+                        setSelectedMaterial(null);
+
+                        if (!isLocalMode && window.firebaseMethods) {
+                            const { doc, deleteDoc } = window.firebaseMethods;
+                            const db = window.db;
+                            const appId = window.appId;
+
+                            try {
+                                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'materials', mId));
+                            } catch (e) {
+                                console.log("Cloud delete sync skipped.");
+                            }
+                        }
+                        showToast("아카이브 내 부적합 자료가 강제 퇴출 및 영구 정삭되었습니다.");
+                    },
+                    "경고: 자료 완전 강제 파기"
+                );
+            };
+
+            // [최고 관리자 전용] 악성 피드백 댓글 강제 제어 삭제
+            const deleteComment = (commentId) => {
+                if (user?.role !== "admin" || !selectedMaterial) return;
+
+                triggerConfirm(
+                    "스팸 및 저격성 문장이 포함되어 필터링 대상이 된 해당 피드백을 완전 제거 조치하시겠습니까?",
+                    async () => {
+                        const filteredComments = (selectedMaterial.comments || []).filter(c => c.id !== commentId);
+                        const updatedList = materials.map(m => {
+                            if (m.id === selectedMaterial.id) {
+                                return { ...m, comments: filteredComments };
+                            }
+                            return m;
+                        });
+
+                        setMaterials(updatedList);
+                        localStorage.setItem("dogye_archive_materials", JSON.stringify(updatedList));
+
+                        const updatedTarget = updatedList.find(m => m.id === selectedMaterial.id);
+                        if (updatedTarget) {
+                            setSelectedMaterial(updatedTarget);
+                        }
+
+                        if (!isLocalMode && window.firebaseMethods) {
+                            const { doc, updateDoc } = window.firebaseMethods;
+                            const db = window.db;
+                            const appId = window.appId;
+
+                            try {
+                                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'materials', selectedMaterial.id), {
+                                    comments: filteredComments
+                                });
+                            } catch (e) {
+                                console.log("Cloud comment delete failed.");
+                            }
+                        }
+                        showToast("지정된 악성 피드백 조각이 완전히 증발하여 소멸했습니다.");
+                    },
+                    "주의: 댓글 강제 규제"
+                );
+            };
+
+            // [최고 관리자 전용] 전교 전송 공지사항 편집 배포
+            const updateGlobalNotice = async () => {
+                if (user?.role !== "admin") return;
+
+                setNoticeText(noticeEditor);
+                localStorage.setItem("dogye_archive_notice", noticeEditor);
+
+                if (!isLocalMode && window.firebaseMethods) {
+                    const { doc, setDoc } = window.firebaseMethods;
+                    const db = window.db;
+                    const appId = window.appId;
+
+                    try {
+                        await setDoc(doc(db, 'artifacts', appId, 'public', 'notice'), {
+                            content: noticeEditor
+                        });
+                    } catch (e) {
+                        console.log("Cloud notice update skipped.");
+                    }
+                }
+                showToast("도계고 아카이브 메인 헤드라인 긴급 공지가 재설정 배포되었습니다.");
+            };
+
+            // 검색어 및 필터 정합성 체커
+            const filteredMaterials = materials.filter(m => {
+                const matchSearch = m.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                                    m.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                    m.uploader.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                    m.description.toLowerCase().includes(searchQuery.toLowerCase());
+                
+                const matchGrade = activeGradeFilter === "전체" ? true : m.grade === activeGradeFilter;
+                const matchSubject = activeSubjectFilter === "전체" ? true : m.subject === activeSubjectFilter;
+                const matchType = activeTypeFilter === "전체" ? true : m.type === activeTypeFilter;
+
+                return matchSearch && matchGrade && matchSubject && matchType;
+            });
+
+            if (isFirebaseLoading && isLocalMode === false) {
+                return (
+                    <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50">
+                        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600 mb-4"></div>
+                        <p className="text-slate-600 font-medium">도계 아카이브 보안 통신 채널을 감지 중...</p>
+                    </div>
+                );
+            }
+
+            if (!user) {
+                return (
+                    <div className="flex items-center justify-center min-h-screen bg-slate-100 px-4">
+                        <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full border border-slate-200">
+                            <div className="text-center mb-8">
+                                <div className="bg-blue-600 text-white p-3.5 rounded-full inline-block mb-3 shadow-md">
+                                    <i className="fa-solid fa-graduation-cap text-3xl"></i>
+                                </div>
+                                <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Dogye Archive</h1>
+                                <p className="text-slate-500 text-sm mt-1">도계고등학교 학습 자료 아카이브</p>
+                            </div>
+
+                            <div className="flex bg-slate-100 p-1 rounded-xl mb-6">
+                                <button 
+                                    onClick={() => setIsLoginView(true)}
+                                    className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${isLoginView ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
+                                    인증 로그인
+                                </button>
+                                <button 
+                                    onClick={() => setIsLoginView(false)}
+                                    className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${!isLoginView ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
+                                    학생 신규 등록
+                                </button>
+                            </div>
+
+                            {isLoginView ? (
+                                <form onSubmit={handleLogin} className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-slate-700 mb-1">인증용 이메일</label>
+                                        <div className="relative">
+                                            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                                                <i className="fa-solid fa-envelope"></i>
+                                            </span>
+                                            <input 
+                                                type="email" 
+                                                placeholder="이메일을 입력하세요"
+                                                value={loginEmail}
+                                                onChange={(e) => setLoginEmail(e.target.value)}
+                                                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all text-sm"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-slate-700 mb-1">비밀번호</label>
+                                        <div className="relative">
+                                            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                                                <i className="fa-solid fa-lock"></i>
+                                            </span>
+                                            <input 
+                                                type="password" 
+                                                placeholder="비밀번호 입력"
+                                                value={loginPassword}
+                                                onChange={(e) => setLoginPassword(e.target.value)}
+                                                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all text-sm"
+                                            />
+                                        </div>
+                                    </div>
+                                    <button 
+                                        type="submit" 
+                                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all shadow-md hover:shadow-lg text-sm mt-2">
+                                        아카이브 출입
+                                    </button>
+                                </form>
+                            ) : (
+                                <form onSubmit={handleSignUp} className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-slate-700 mb-1">학우 성함</label>
+                                        <div className="relative">
+                                            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                                                <i className="fa-solid fa-user"></i>
+                                            </span>
+                                            <input 
+                                                type="text" 
+                                                placeholder="본명을 적어주세요"
+                                                value={signUpName}
+                                                onChange={(e) => setSignUpName(e.target.value)}
+                                                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all text-sm"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-slate-700 mb-1">소속 학년</label>
+                                        <select 
+                                            value={signUpGrade}
+                                            onChange={(e) => setSignUpGrade(e.target.value)}
+                                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all text-sm">
+                                            <option value="1학년">1학년</option>
+                                            <option value="2학년">2학년</option>
+                                            <option value="3학년">3학년</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-slate-700 mb-1">이메일 등록</label>
+                                        <div className="relative">
+                                            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                                                <i className="fa-solid fa-envelope"></i>
+                                            </span>
+                                            <input 
+                                                type="email" 
+                                                placeholder="이메일 입력"
+                                                value={signUpEmail}
+                                                onChange={(e) => setSignUpEmail(e.target.value)}
+                                                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all text-sm"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-slate-700 mb-1">패스워드 설정</label>
+                                        <div className="relative">
+                                            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                                                <i className="fa-solid fa-lock"></i>
+                                            </span>
+                                            <input 
+                                                type="password" 
+                                                placeholder="비밀번호 지정 (6자리 이상)"
+                                                value={signUpPassword}
+                                                onChange={(e) => setSignUpPassword(e.target.value)}
+                                                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all text-sm"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-slate-700 mb-1">패스워드 재확인</label>
+                                        <div className="relative">
+                                            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                                                <i className="fa-solid fa-square-check"></i>
+                                            </span>
+                                            <input 
+                                                type="password" 
+                                                placeholder="한 번 더 입력해 주세요"
+                                                value={signUpPasswordConfirm}
+                                                onChange={(e) => setSignUpPasswordConfirm(e.target.value)}
+                                                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all text-sm"
+                                            />
+                                        </div>
+                                    </div>
+                                    <button 
+                                        type="submit" 
+                                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all shadow-md hover:shadow-lg text-sm mt-2">
+                                        신규 정보 정식 가입 요청
+                                    </button>
+                                </form>
+                            )}
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="flex flex-col min-h-screen bg-slate-50">
+                    {/* 상단 통합 헤더 */}
+                    <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+                            <div className="flex items-center space-x-3">
+                                <div className="bg-blue-600 text-white p-2 rounded-lg">
+                                    <i className="fa-solid fa-graduation-cap text-xl"></i>
+                                </div>
+                                <div>
+                                    <h1 className="text-lg font-extrabold text-slate-900 tracking-tight flex items-center gap-1.5">
+                                        Dogye Archive
+                                        {isLocalMode ? (
+                                            <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                                                🟢 로컬 테스트 모드
+                                            </span>
+                                        ) : (
+                                            <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-2 py-0.5 rounded-full border border-blue-200 flex items-center gap-1">
+                                                🌐 클라우드 실시간 동기화
+                                            </span>
+                                        )}
+                                    </h1>
+                                    <p className="text-[10px] text-slate-500">도계고등학교 전용 학습자료실</p>
+                                </div>
+                            </div>
+                            
+                            <div className="flex items-center space-x-4">
+                                <div className="hidden md:flex flex-col items-end">
+                                    <div className="flex items-center space-x-1.5">
+                                        {user.role === "admin" && (
+                                            <span className="bg-yellow-100 text-yellow-800 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border border-yellow-200">
+                                                👑 최고 관리자
+                                            </span>
+                                        )}
+                                        <span className="text-sm font-bold text-slate-800">{user.name} 학우님</span>
+                                    </div>
+                                    <span className="text-xs text-slate-400">{user.grade}</span>
+                                </div>
+
+                                {user.role === "admin" && (
+                                    <button 
+                                        onClick={() => {
+                                            loadRegisteredUsers();
+                                            setIsAdminConsoleOpen(true);
+                                        }}
+                                        className="bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold px-3 py-1.5 rounded-lg border border-purple-200 transition-all text-xs flex items-center gap-1">
+                                        <i className="fa-solid fa-user-shield"></i>
+                                        관리자 대시보드
+                                    </button>
+                                )}
+
+                                <button 
+                                    onClick={() => {
+                                        setNewFile(null); // 모달 오픈 전 파일 첨부 상태 초기화
+                                        setIsUploadOpen(true);
+                                    }}
+                                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-lg shadow-sm hover:shadow-md transition-all text-xs flex items-center gap-1">
+                                    <i className="fa-solid fa-circle-plus"></i>
+                                    자료 올리기
+                                </button>
+
+                                <button 
+                                    onClick={handleLogout}
+                                    className="text-slate-400 hover:text-red-500 p-2 rounded-lg transition-all"
+                                    title="인증 해제">
+                                    <i className="fa-solid fa-right-from-bracket text-lg"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* 긴급 글로벌 전송 공지사항 */}
+                    {noticeText && (
+                        <div className="bg-yellow-50 border-b border-yellow-100">
+                            <div className="max-w-7xl mx-auto py-3 px-4 sm:px-6 lg:px-8 flex items-center space-x-3 text-yellow-800 text-xs sm:text-sm">
+                                <div className="bg-yellow-200 text-yellow-900 px-2 py-0.5 rounded-md font-bold shrink-0">
+                                    공지
+                                </div>
+                                <div className="flex-1 font-semibold">{noticeText}</div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 메인 뷰포트 컨테이너 */}
+                    <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+                        {/* 검색 및 필터 구조 대시보드 */}
+                        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm mb-6 space-y-4">
+                            <div className="flex flex-col md:flex-row gap-4">
+                                <div className="flex-1 relative">
+                                    <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                                        <i className="fa-solid fa-magnifying-glass"></i>
+                                    </span>
+                                    <input 
+                                        type="text" 
+                                        placeholder="과목, 단원, 혹은 기증한 학생 이름으로 기출 자료를 검색해보세요."
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all text-sm"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-4">
+                                {/* 학년 대시 필터 */}
+                                <div className="flex items-center space-x-1.5">
+                                    <span className="text-xs font-bold text-slate-400 mr-1">대상학년:</span>
+                                    {["전체", "1학년", "2학년", "3학년"].map(g => (
+                                        <button 
+                                            key={g}
+                                            onClick={() => setActiveGradeFilter(g)}
+                                            className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${activeGradeFilter === g ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                                            {g}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                <div className="h-4 w-[1px] bg-slate-200 hidden sm:block mx-2"></div>
+
+                                {/* 과목 대시 필터 */}
+                                <div className="flex items-center space-x-1.5">
+                                    <span className="text-xs font-bold text-slate-400 mr-1">과목분류:</span>
+                                    {["전체", "물리학 I", "영어", "통합과학", "수학", "화학 I", "지구과학 I", "생명과학 I"].map(s => (
+                                        <button 
+                                            key={s}
+                                            onClick={() => setActiveSubjectFilter(s)}
+                                            className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${activeSubjectFilter === s ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                                            {s}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                <div className="h-4 w-[1px] bg-slate-200 hidden sm:block mx-2"></div>
+
+                                {/* 자료유형 대시 필터 */}
+                                <div className="flex items-center space-x-1.5">
+                                    <span className="text-xs font-bold text-slate-400 mr-1">자료유형:</span>
+                                    {["전체", "기출 분석", "요약 노트", "수행평가 대비"].map(t => (
+                                        <button 
+                                            key={t}
+                                            onClick={() => setActiveTypeFilter(t)}
+                                            className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${activeTypeFilter === t ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                                            {t}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 학습자료 리스트 격자 영역 */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {filteredMaterials.map(mat => (
+                                <div 
+                                    key={mat.id}
+                                    className="bg-white rounded-2xl border border-slate-200 hover:border-blue-400 hover:shadow-md transition-all duration-300 flex flex-col justify-between overflow-hidden group">
+                                    
+                                    <div className="p-6">
+                                        <div className="flex items-center justify-between mb-4">
+                                            <div className="flex items-center space-x-1.5">
+                                                <span className="bg-blue-50 text-blue-600 text-[10px] font-bold px-2 py-0.5 rounded">
+                                                    {mat.grade}
+                                                </span>
+                                                <span className="bg-slate-100 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded">
+                                                    {mat.subject}
+                                                </span>
+                                            </div>
+                                            
+                                            <div className="flex items-center gap-1.5">
+                                                {mat.isVerified ? (
+                                                    <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1" title="관리자 검증 패스">
+                                                        <i className="fa-solid fa-circle-check text-[8px]"></i> 검증 완료
+                                                    </span>
+                                                ) : (
+                                                    <span className="bg-slate-100 text-slate-400 text-[10px] px-2 py-0.5 rounded-full">
+                                                        검토 중
+                                                    </span>
+                                                )}
+                                                
+                                                {user?.role === "admin" && !mat.isVerified && (
+                                                    <button 
+                                                        onClick={() => verifyMaterial(mat.id)}
+                                                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-blue-200 transition-all">
+                                                        승인
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <h3 
+                                            onClick={() => setSelectedMaterial(mat)}
+                                            className="text-base font-bold text-slate-800 leading-snug group-hover:text-blue-600 transition-all cursor-pointer mb-2 line-clamp-2">
+                                            {mat.title}
+                                        </h3>
+
+                                        <p className="text-xs text-slate-500 line-clamp-2 mb-4">
+                                            {mat.description}
+                                        </p>
+                                    </div>
+
+                                    <div className="bg-slate-50 px-6 py-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
+                                        <div className="flex items-center space-x-1">
+                                            <span className="font-semibold text-slate-600">{mat.uploader} 학우</span>
+                                            <span className="text-[9px] text-slate-300">|</span>
+                                            <span>{mat.date}</span>
+                                        </div>
+                                        
+                                        <div className="flex items-center space-x-3">
+                                            <button 
+                                                onClick={() => handleLike(mat.id)}
+                                                className="hover:text-red-500 flex items-center space-x-1 font-semibold transition-all">
+                                                <i className="fa-solid fa-heart text-red-400"></i>
+                                                <span>{mat.likes}</span>
+                                            </button>
+                                            <span className="flex items-center space-x-1">
+                                                <i className="fa-solid fa-cloud-arrow-down"></i>
+                                                <span>{mat.downloads}</span>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+
+                            {filteredMaterials.length === 0 && (
+                                <div className="col-span-full py-16 text-center">
+                                    <div className="text-slate-300 text-5xl mb-4">
+                                        <i className="fa-solid fa-folder-open"></i>
+                                    </div>
+                                    <p className="text-slate-500 font-medium">부합하는 학습 정보가 없습니다.</p>
+                                    <p className="text-slate-400 text-xs mt-1">도계고 친구들을 위해 새로운 기출 정보나 요약 정리를 선점하여 업로드해보세요!</p>
+                                </div>
+                            )}
+                        </div>
+                    </main>
+
+                    {/* 하단 푸터 영역 */}
+                    <footer className="bg-slate-900 text-slate-400 py-8 border-t border-slate-800 mt-12">
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-xs space-y-2">
+                            <p className="font-semibold text-slate-300">Dogye Archive © 2026</p>
+                            <p>도계고등학교 전용 보완된 소속원 전용 아카이브 포털</p>
+                            <p className="text-[10px] text-slate-500">이 서비스는 오프라인 로컬 환경 및 클라우드 동기화 시스템에서 온전히 가동됩니다.</p>
+                        </div>
+                    </footer>
+
+                    {/* 자료 상세 모달창 */}
+                    {selectedMaterial && (
+                        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                            <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden border border-slate-200 flex flex-col">
+                                <div className="p-6 border-b border-slate-100 flex items-start justify-between bg-slate-50">
+                                    <div>
+                                        <div className="flex items-center gap-1.5 mb-2">
+                                            <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded">
+                                                {selectedMaterial.grade}
+                                            </span>
+                                            <span className="bg-slate-200 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded">
+                                                {selectedMaterial.subject}
+                                            </span>
+                                            <span className="bg-slate-200 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded">
+                                                {selectedMaterial.type}
+                                            </span>
+                                        </div>
+                                        <h2 className="text-lg font-extrabold text-slate-800 tracking-tight leading-snug">
+                                            {selectedMaterial.title}
+                                        </h2>
+                                    </div>
+                                    <button 
+                                        onClick={() => setSelectedMaterial(null)}
+                                        className="text-slate-400 hover:text-slate-600 p-1">
+                                        <i className="fa-solid fa-xmark text-xl"></i>
+                                    </button>
+                                </div>
+
+                                <div className="p-6 overflow-y-auto space-y-6 flex-1">
+                                    <div>
+                                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">자료 가이드 및 필기 분석 팁</h4>
+                                        <p className="text-sm text-slate-700 bg-slate-50 p-4 rounded-2xl border border-slate-100 leading-relaxed whitespace-pre-wrap">
+                                            {selectedMaterial.description}
+                                        </p>
+                                    </div>
+
+                                    <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+                                        <div className="flex items-center space-x-3">
+                                            <div className="bg-blue-600 text-white p-3 rounded-xl shadow-sm">
+                                                <i className="fa-solid fa-file-invoice text-xl"></i>
+                                            </div>
+                                            <div className="text-left">
+                                                <p className="text-xs text-slate-400 font-medium">첨부 학습자료명</p>
+                                                <p className="text-sm font-bold text-slate-700 break-all">{selectedMaterial.fileName}</p>
+                                                {selectedMaterial.fileSize && (
+                                                    <p className="text-[10px] text-slate-400 font-semibold">
+                                                        파일 용량: {(selectedMaterial.fileSize / (1024 * 1024)).toFixed(2)} MB
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <button 
+                                            onClick={() => handleDownloadSimulate(selectedMaterial.id)}
+                                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-2.5 rounded-xl transition-all shadow-md hover:shadow-lg text-xs w-full sm:w-auto shrink-0 flex items-center justify-center gap-1.5">
+                                            <i className="fa-solid fa-download"></i>
+                                            원본 파일 다운로드
+                                        </button>
+                                    </div>
+
+                                    <div className="flex items-center justify-between text-xs text-slate-400 border-b border-slate-100 pb-4">
+                                        <div className="flex items-center space-x-2">
+                                            <span>작성자: <b className="text-slate-600">{selectedMaterial.uploader}</b></span>
+                                            <span>•</span>
+                                            <span>기증일자: {selectedMaterial.date}</span>
+                                        </div>
+                                        {user?.role === "admin" && (
+                                            <button 
+                                                onClick={() => deleteMaterial(selectedMaterial.id)}
+                                                className="text-red-500 hover:text-red-700 font-bold flex items-center gap-1">
+                                                <i className="fa-solid fa-trash-can"></i>
+                                                강제 파기퇴출
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* 피드백 영역 */}
+                                    <div className="space-y-4">
+                                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">교내 피드백 교류 ({selectedMaterial.comments?.length || 0})</h4>
+                                        
+                                        <div className="space-y-3 max-h-[250px] overflow-y-auto pr-1">
+                                            {(selectedMaterial.comments || []).map(comment => (
+                                                <div key={comment.id} className="bg-slate-50 p-3 rounded-xl border border-slate-100 relative group/comment">
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <div className="flex items-center space-x-1.5">
+                                                            <span className="text-xs font-bold text-slate-700">{comment.author}</span>
+                                                            <span className="text-[9px] text-slate-300">|</span>
+                                                            <span className="text-[10px] text-slate-400">{comment.date}</span>
+                                                        </div>
+                                                        {user?.role === "admin" && (
+                                                            <button 
+                                                                onClick={() => deleteComment(comment.id)}
+                                                                className="text-red-400 hover:text-red-600 text-[10px] font-bold"
+                                                                title="댓글 삭제">
+                                                                강제 규제제거
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-xs text-slate-600 leading-relaxed">{comment.text}</p>
+                                                </div>
+                                            ))}
+                                            {(selectedMaterial.comments || []).length === 0 && (
+                                                <p className="text-xs text-slate-400 text-center py-4">남겨진 피드백이 존재하지 않습니다. 첫 피드백을 전달해 보세요!</p>
+                                            )}
+                                        </div>
+
+                                        <form onSubmit={handleCommentSubmit} className="flex gap-2">
+                                            <input 
+                                                type="text" 
+                                                placeholder="오타 정정 및 격려성 공부 후기를 조심스럽게 남겨주세요."
+                                                value={commentInput}
+                                                onChange={(e) => setCommentInput(e.target.value)}
+                                                className="flex-1 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all text-xs"
+                                            />
+                                            <button 
+                                                type="submit" 
+                                                className="bg-slate-800 hover:bg-slate-900 text-white font-bold px-4 py-2 rounded-xl transition-all text-xs shrink-0">
+                                                기입
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 학습 자료 정식 기증 등록 모달 */}
+                    {isUploadOpen && (
+                        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                            <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200">
+                                <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                                    <h2 className="text-base font-bold text-slate-800 flex items-center gap-1.5">
+                                        <i className="fa-solid fa-file-arrow-up text-blue-600"></i>
+                                        기출 및 공부 자료 기부
+                                    </h2>
+                                    <button 
+                                        onClick={() => setIsUploadOpen(false)}
+                                        className="text-slate-400 hover:text-slate-600">
+                                        <i className="fa-solid fa-xmark text-lg"></i>
+                                    </button>
+                                </div>
+
+                                <form onSubmit={handleUpload} className="p-6 space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">교과 및 자료명</label>
+                                        <input 
+                                            type="text" 
+                                            placeholder="예) 3학년 2학기 영어 독해 수행평가 단어 단권화 요약"
+                                            value={newTitle}
+                                            onChange={(e) => setNewTitle(e.target.value)}
+                                            className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all text-xs"
+                                        />
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">학년 선택</label>
+                                            <select 
+                                                value={newGrade}
+                                                onChange={(e) => setNewGrade(e.target.value)}
+                                                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none text-xs">
+                                                <option value="1학년">1학년</option>
+                                                <option value="2학년">2학년</option>
+                                                <option value="3학년">3학년</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">소속 과목</label>
+                                            <select 
+                                                value={newSubject}
+                                                onChange={(e) => setNewSubject(e.target.value)}
+                                                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none text-xs">
+                                                <option value="물리학 I">물리학 I</option>
+                                                <option value="영어">영어</option>
+                                                <option value="통합과학">통합과학</option>
+                                                <option value="수학">수학</option>
+                                                <option value="화학 I">화학 I</option>
+                                                <option value="지구과학 I">지구과학 I</option>
+                                                <option value="생명과학 I">생명과학 I</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">자료 분류</label>
+                                        <select 
+                                            value={newType}
+                                            onChange={(e) => setNewType(e.target.value)}
+                                            className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none text-xs">
+                                            <option value="요약 노트">요약 노트</option>
+                                            <option value="기출 분석">기출 분석</option>
+                                            <option value="수행평가 대비">수행평가 대비</option>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">실제 파일 기증</label>
+                                        <div className="border-2 border-dashed border-slate-300 rounded-2xl p-6 text-center bg-slate-50 hover:bg-slate-100/50 hover:border-blue-400 transition-all cursor-pointer relative">
+                                            <input 
+                                                type="file" 
+                                                onChange={(e) => {
+                                                    if (e.target.files && e.target.files[0]) {
+                                                        setNewFile(e.target.files[0]);
+                                                    }
+                                                }}
+                                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                            />
+                                            {newFile ? (
+                                                <div className="space-y-2">
+                                                    <div className="bg-emerald-100 text-emerald-600 w-10 h-10 rounded-full flex items-center justify-center mx-auto shadow-sm">
+                                                        <i className="fa-solid fa-file-circle-check text-xl"></i>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs font-bold text-slate-700 truncate max-w-[280px] mx-auto">{newFile.name}</p>
+                                                        <p className="text-[10px] text-slate-400">규격: {(newFile.size / (1024 * 1024)).toFixed(2)} MB</p>
+                                                    </div>
+                                                    <span className="inline-block bg-emerald-50 text-emerald-700 text-[9px] font-bold px-2 py-0.5 rounded-full border border-emerald-100">
+                                                        가상 스토리지 대기 완료
+                                                    </span>
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-2">
+                                                    <div className="text-slate-400 text-3xl">
+                                                        <i className="fa-solid fa-file-shield"></i>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs font-bold text-slate-600">이곳을 클릭하거나 기증할 파일을 놓으세요</p>
+                                                        <p className="text-[10px] text-slate-400">PDF, HWP, DOCX, ZIP 등 지원 (대용량 가능)</p>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">자료 기증 핵심 팁 및 소개</label>
+                                        <textarea 
+                                            placeholder="오답율이 가장 높았던 공식이나 교실에서 주의해야 할 핵심 포인트를 설명해 주세요."
+                                            value={newDescription}
+                                            onChange={(e) => setNewDescription(e.target.value)}
+                                            rows="3"
+                                            className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all text-xs resize-none"
+                                        ></textarea>
+                                    </div>
+
+                                    <button 
+                                        type="submit"
+                                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-md hover:shadow-lg transition-all text-xs">
+                                        도계 아카이브 등재 신청
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 최고 관리자 전용 제어 콘솔 모달 */}
+                    {isAdminConsoleOpen && (
+                        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                            <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-hidden border border-slate-200 flex flex-col">
+                                <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-purple-50">
+                                    <h2 className="text-base font-bold text-purple-800 flex items-center gap-1.5">
+                                        <i className="fa-solid fa-user-shield"></i>
+                                        👑 Dogye Archive 전교 원격 관리 시스템
+                                    </h2>
+                                    <button 
+                                        onClick={() => setIsAdminConsoleOpen(false)}
+                                        className="text-purple-400 hover:text-purple-600">
+                                        <i className="fa-solid fa-xmark text-lg"></i>
+                                    </button>
+                                </div>
+
+                                <div className="p-6 overflow-y-auto space-y-6 flex-1">
+                                    {/* 글로벌 배너 컨트롤러 */}
+                                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                                        <h3 className="text-xs font-extrabold text-slate-700 flex items-center gap-1.5">
+                                            <i className="fa-solid fa-bullhorn text-blue-600"></i>
+                                            실시간 중요 공지사항 편집 배포
+                                        </h3>
+                                        <div className="flex gap-2">
+                                            <input 
+                                                type="text" 
+                                                placeholder="도계고 전원에게 실시간 전송할 공지를 입력해 보세요."
+                                                value={noticeEditor}
+                                                onChange={(e) => setNoticeEditor(e.target.value)}
+                                                className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-xl focus:ring-1 focus:ring-blue-500 focus:outline-none text-xs"
+                                            />
+                                            <button 
+                                                onClick={updateGlobalNotice}
+                                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl text-xs shrink-0 transition-all">
+                                                즉각 송출
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* 학생 명부 이력 */}
+                                    <div className="space-y-3">
+                                        <h3 className="text-xs font-extrabold text-slate-700 flex items-center gap-1.5">
+                                            <i className="fa-solid fa-address-book text-purple-600"></i>
+                                            도계 아카이브 승인 가입 인명 리스트 ({usersList.length}명)
+                                        </h3>
+                                        <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-[250px] overflow-y-auto">
+                                            <table className="w-full text-left border-collapse text-xs">
+                                                <thead>
+                                                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold">
+                                                        <th className="p-3">학우 이름</th>
+                                                        <th className="p-3">승인 학년</th>
+                                                        <th className="p-3">고유 이메일</th>
+                                                        <th className="p-3">시스템 권한</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100 text-slate-600">
+                                                    {usersList.map((usr, index) => (
+                                                        <tr key={index} className="hover:bg-slate-50/50">
+                                                            <td className="p-3 font-semibold text-slate-800">{usr.name}</td>
+                                                            <td className="p-3">{usr.grade}</td>
+                                                            <td className="p-3 font-mono text-slate-500">{usr.email}</td>
+                                                            <td className="p-3">
+                                                                {usr.role === "admin" ? (
+                                                                    <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-bold text-[9px]">ADMIN</span>
+                                                                ) : (
+                                                                    <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full text-[9px]">STUDENT</span>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                    {usersList.length === 0 && (
+                                                        <tr>
+                                                            <td colSpan="4" className="p-4 text-center text-slate-400">가입 승인된 정회원이 현재 존재하지 않습니다.</td>
+                                                        </tr>
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 커스텀 경고 및 알림 안내 모달 (alert 우회) */}
+                    {customAlert && (
+                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+                            <div className="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full border border-slate-200 text-center space-y-4">
+                                <div className="text-blue-600 text-3xl animate-bounce">
+                                    <i className="fa-solid fa-circle-exclamation"></i>
+                                </div>
+                                <div className="space-y-1">
+                                    <h3 className="text-sm font-bold text-slate-800">{customAlert.title}</h3>
+                                    <p className="text-xs text-slate-500 leading-relaxed">{customAlert.message}</p>
+                                </div>
+                                <button 
+                                    onClick={() => setCustomAlert(null)}
+                                    className="w-full bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold py-2 rounded-xl transition-all">
+                                    동의 및 확인
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 커스텀 확인 요청 모달 (confirm 우회) */}
+                    {customConfirm && (
+                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+                            <div className="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full border border-slate-200 text-center space-y-4">
+                                <div className="text-amber-500 text-3xl">
+                                    <i className="fa-solid fa-triangle-exclamation"></i>
+                                </div>
+                                <div className="space-y-1">
+                                    <h3 className="text-sm font-bold text-slate-800">{customConfirm.title}</h3>
+                                    <p className="text-xs text-slate-500 leading-relaxed">{customConfirm.message}</p>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button 
+                                        onClick={() => setCustomConfirm(null)}
+                                        className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold py-2 rounded-xl transition-all">
+                                        취소
+                                    </button>
+                                    <button 
+                                        onClick={() => {
+                                            customConfirm.onConfirm();
+                                            setCustomConfirm(null);
+                                        }}
+                                        className="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-2 rounded-xl transition-all">
+                                        의무 실행
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 실시간 알림 안내 Toast */}
+                    {toast && (
+                        <div className="fixed bottom-4 right-4 z-[99] bg-slate-900 text-white py-3 px-5 rounded-xl shadow-2xl border border-slate-800 flex items-center space-x-2.5 max-w-sm">
+                            {toast.type === "error" ? (
+                                <span className="text-red-400 text-sm shrink-0"><i className="fa-solid fa-circle-xmark"></i></span>
+                            ) : (
+                                <span className="text-green-400 text-sm shrink-0"><i className="fa-solid fa-circle-check"></i></span>
+                            )}
+                            <span className="text-xs font-medium">{toast.message}</span>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const container = document.getElementById('root');
+        const root = ReactDOM.createRoot(container);
+        root.render(<App />);
+    </script>
+</body>
+</html>
