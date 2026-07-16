@@ -137,68 +137,7 @@
         // 도계고등학교 이메일 인증용 고정 도메인
         const SCHOOL_DOMAIN = "dogye.hs.kr";
 
-        // 기본 학습자료 템플릿 데이터
-        const INITIAL_MATERIALS = [
-            {
-                id: "1",
-                title: "도계고 2학년 1학기 중간고사 물리학I 기출 경향 및 킬러 문항 분석",
-                grade: "2학년",
-                subject: "물리학 I",
-                type: "기출 분석",
-                uploader: "전성민",
-                uploaderEmail: "sungmin@dogye.hs.kr",
-                fileType: "pdf",
-                fileName: "Dogye_Physics1_Midterm_Analysis.pdf",
-                fileSize: 1845210, // 약 1.76 MB
-                downloads: 48,
-                likes: 18,
-                isVerified: true,
-                description: "작년 도계고 기출 문항 중 역학적 에너지 보존 법칙인 $E_k + E_p = \\text{const}$ 파트의 변형 문항을 분석하고, 올해 출제 예상 범위의 변형 기출 3선까지 함께 수록해 둔 오답 정리 노트입니다.",
-                comments: [
-                    { id: "c1", author: "김민혁", text: "역학 파트 변형 공식 정리 대박입니다... 물리 수행평가 공부할 때 엄청 도움되네요!", date: "2026-07-14" },
-                    { id: "c2", author: "이지호", text: "도계고 기출 경향이랑 거의 일치하네요 ㅠㅠ 올려주셔서 감사해요!", date: "2026-07-15" }
-                ],
-                date: "2026-07-12"
-            },
-            {
-                id: "2",
-                title: "3학년 영어 독해와 작문 수행평가 만점 대비 에세이 가이드 및 템플릿",
-                grade: "3학년",
-                subject: "영어",
-                type: "수행평가 대비",
-                uploader: "이지은",
-                uploaderEmail: "jieun@dogye.hs.kr",
-                fileType: "hwp",
-                fileName: "Dogye_English_Essay_Template.hwp",
-                fileSize: 412500, // 약 402 KB
-                downloads: 134,
-                likes: 52,
-                isVerified: false,
-                description: "고득점 에세이 구조를 쉽게 짤 수 있도록 설계한 서론-본론-결론 만능 템플릿입니다. 문법적 오류를 미연에 방지하는 핵심 필수 구문 10가지가 함께 포함되어 있습니다.",
-                comments: [
-                    { id: "c3", author: "박지원", text: "내일모레 제출인데 이 구조 덕분에 틀이 드디어 잡혔습니다! 구원자이십니다.", date: "2026-07-15" }
-                ],
-                date: "2026-07-14"
-            },
-            {
-                id: "3",
-                title: "통합과학 유전 및 생명과학 파트 개념 단권화 요약 정리본",
-                grade: "1학년",
-                subject: "통합과학",
-                type: "요약 노트",
-                uploader: "박준우",
-                uploaderEmail: "junwoo@dogye.hs.kr",
-                fileType: "pdf",
-                fileName: "Dogye_Science_Genetics_Summary.pdf",
-                fileSize: 2541022, // 약 2.42 MB
-                downloads: 89,
-                likes: 31,
-                isVerified: true,
-                description: "통합과학 유전 파트(멘델의 법칙, 가계도 기초 해석) 핵심 단권화 필기노트입니다. 까다로운 빈출 OX 보기만 모아 해설을 꼼꼼하게 정리해두었습니다.",
-                comments: [],
-                date: "2026-07-10"
-            }
-        ];
+        
 
         function App() {
             const [user, setUser] = useState(null); 
