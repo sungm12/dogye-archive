@@ -139,8 +139,9 @@
             const [isQnaWriteOpen, setIsQnaWriteOpen] = useState(false);
             const [isPreviewMode, setIsPreviewMode] = useState(false);
             
-            // 글로벌 실시간 공지
-            const [noticeText, setNoticeText] = useState("도계고등학교 학습 아카이브 3.0에 오신 것을 환영합니다! 진짜 파일 공유 기능이 활성화되었습니다.");
+            // 글로벌 실시간 공지 (클라우드 동기화 지원)
+            const [noticeText, setNoticeText] = useState("도계고등학교 학습 아카이브 3.2에 오신 것을 환영합니다! 공지 및 학사일정이 완벽하게 연동됩니다.");
+            const [editNotice, setEditNotice] = useState(noticeText);
 
             // 🚀 실제 파일 업로드 상태 관리
             const [newTitle, setNewTitle] = useState("");
@@ -156,9 +157,11 @@
             const [newQnaContent, setNewQnaContent] = useState("");
             const [newQnaSubject, setNewQnaSubject] = useState("전체");
             
-            // 최고 관리자 대시보드
+            // 최고 관리자 대시보드 및 학생 명단
             const [isAdminConsoleOpen, setIsAdminConsoleOpen] = useState(false);
+            const [adminTab, setAdminTab] = useState("config"); // config (공지/일정) 또는 users (학생관리)
             const [usersList, setUsersList] = useState([]);
+            const [userSearchQuery, setUserSearchQuery] = useState("");
 
             // 일정 설정 (D-Day)
             const [ddaySettings, setDdaySettings] = useState({
@@ -224,8 +227,15 @@
                         });
                         localStorage.setItem("dogye_archive_users", JSON.stringify(localUsers));
                     }
+                    
+                    // 관리자일 경우 미리 로컬 명단이라도 로드해둠
+                    const adminCheck = savedUser ? JSON.parse(savedUser) : null;
+                    if (adminCheck && adminCheck.role === "admin") {
+                        const filteredLocal = localUsers.filter(u => u.email !== "admin@dogye.hs.kr");
+                        setUsersList(filteredLocal);
+                    }
 
-                    // 오프라인 상태일 때 로컬에 저장된 D-Day 정보 불러오기
+                    // 오프라인 상태일 때 로컬에 저장된 D-Day 및 공지 정보 불러오기
                     const savedDday = localStorage.getItem("dogye_dday_settings");
                     if (savedDday) {
                         try {
@@ -233,6 +243,11 @@
                             setDdaySettings(parsed);
                             setEditDday(parsed);
                         } catch(e) {}
+                    }
+                    const savedNotice = localStorage.getItem("dogye_notice_settings");
+                    if (savedNotice) {
+                        setNoticeText(savedNotice);
+                        setEditNotice(savedNotice);
                     }
                 };
 
@@ -250,6 +265,17 @@
                                     listenToCloudMaterials();
                                     listenToCloudQna();
                                     listenToCloudSettings();
+                                    
+                                    // 로그인한 계정이 관리자라면 클라우드 학생 명부도 실시간으로 감시
+                                    const savedUser = localStorage.getItem("dogye_current_user");
+                                    if (savedUser) {
+                                        try {
+                                            const parsed = JSON.parse(savedUser);
+                                            if (parsed.role === "admin") {
+                                                listenToCloudUsers();
+                                            }
+                                        } catch(e) {}
+                                    }
                                 }
                                 setIsFirebaseLoading(false);
                             });
@@ -270,6 +296,13 @@
 
                 return () => window.removeEventListener('firebase-initialized', handleFirebaseInitEvent);
             }, []);
+
+            // 최고관리자 접속 감지 시 학생 명단 감시 실행용
+            useEffect(() => {
+                if (user && user.role === "admin" && !isLocalMode) {
+                    listenToCloudUsers();
+                }
+            }, [user, isLocalMode]);
 
             // Firestore 실시간 리스너 (자료실)
             const listenToCloudMaterials = () => {
@@ -297,16 +330,42 @@
                 });
             };
 
-            // Firestore 실시간 리스너 (일정 설정)
+            // Firestore 실시간 리스너 (일정 및 공지 설정)
             const listenToCloudSettings = () => {
                 const { doc, onSnapshot } = window.firebaseMethods;
-                const settingsRef = doc(window.db, 'artifacts', window.appId, 'public', 'data', 'settings', 'dday');
+                const settingsRef = doc(window.db, 'artifacts', window.appId, 'public', 'data', 'settings', 'config');
                 
                 onSnapshot(settingsRef, (docSnap) => {
                     if (docSnap.exists()) {
-                        setDdaySettings(docSnap.data());
-                        setEditDday(docSnap.data());
+                        const data = docSnap.data();
+                        if (data.dday) {
+                            setDdaySettings(data.dday);
+                            setEditDday(data.dday);
+                        }
+                        if (data.notice !== undefined) {
+                            setNoticeText(data.notice);
+                            setEditNotice(data.notice);
+                        }
                     }
+                });
+            };
+
+            // 👥 Firestore 실시간 리스너 (학생 계정 정보 관리자 조회용)
+            const listenToCloudUsers = () => {
+                const { collection, onSnapshot } = window.firebaseMethods;
+                const usersRef = collection(window.db, 'artifacts', window.appId, 'public', 'data', 'users');
+                
+                onSnapshot(usersRef, (snapshot) => {
+                    const uList = [];
+                    snapshot.forEach((d) => {
+                        const userData = d.data();
+                        if (userData.email !== "admin@dogye.hs.kr") {
+                            uList.push({ ...userData, id: d.id });
+                        }
+                    });
+                    setUsersList(uList);
+                }, (error) => {
+                    console.warn("학생 계정 목록 로드 실패 (권한 제한 또는 오프라인):", error);
                 });
             };
 
@@ -572,21 +631,54 @@
                 });
             }
 
-            // 관리자 콘솔 설정 저장 로직
+            // 👥 관리자의 학생 영구 제명/탈퇴 제어 권한
+            const deleteUser = async (userEmail) => {
+                if (user?.role !== "admin") return;
+                triggerConfirm(`[${userEmail}] 학생 계정을 아카이브에서 강제 추방 및 영구 탈퇴 처리하시겠습니까?`, async () => {
+                    // 로컬 스토리지 삭제
+                    const localUsers = JSON.parse(localStorage.getItem("dogye_archive_users") || "[]");
+                    const filteredLocal = localUsers.filter(u => u.email !== userEmail);
+                    localStorage.setItem("dogye_archive_users", JSON.stringify(filteredLocal));
+                    setUsersList(prev => prev.filter(u => u.email !== userEmail));
+
+                    // 클라우드 데이터베이스 삭제
+                    if (!isLocalMode && window.firebaseMethods) {
+                        const { doc, deleteDoc } = window.firebaseMethods;
+                        try {
+                            const docId = sanitizeEmailForDocId(userEmail);
+                            await deleteDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'users', docId));
+                            showToast("선택한 학생 계정이 클라우드에서 안전하게 소멸되었습니다.");
+                        } catch (err) {
+                            console.error(err);
+                            showToast("클라우드 계정 삭제 권한 처리에 실패했습니다.", "error");
+                        }
+                    } else {
+                        showToast("로컬 모드에서 학생 계정이 강제 탈퇴되었습니다.");
+                    }
+                });
+            };
+
+            // 관리자 콘솔 설정 저장 로직 (학사일정 및 실시간 공지사항 통합)
             const handleAdminSettingsSave = async (e) => {
                 e.preventDefault();
                 setDdaySettings(editDday);
+                setNoticeText(editNotice);
+                
                 localStorage.setItem("dogye_dday_settings", JSON.stringify(editDday));
+                localStorage.setItem("dogye_notice_settings", editNotice);
 
                 if (!isLocalMode && window.firebaseMethods) {
                     const { doc, setDoc } = window.firebaseMethods;
                     try {
-                        await setDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'settings', 'dday'), editDday);
+                        await setDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'settings', 'config'), {
+                            dday: editDday,
+                            notice: editNotice
+                        });
                     } catch (err) {
                         console.error(err);
                     }
                 }
-                showToast("학사일정 설정이 클라우드에 갱신되었습니다!");
+                showToast("공지사항 및 학사일정 정보가 전교생 채널에 업데이트되었습니다!");
                 setIsAdminConsoleOpen(false);
             };
 
@@ -610,6 +702,11 @@
                 return matchSearch && matchSubject;
             });
 
+            // 학생 관리 명단 필터링
+            const filteredUsers = usersList.filter(u => {
+                return u.name.includes(userSearchQuery) || u.email.includes(userSearchQuery) || u.grade.includes(userSearchQuery);
+            });
+
             if (isFirebaseLoading && isLocalMode === false) {
                 return (
                     <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50">
@@ -628,7 +725,7 @@
                                     <i className="fa-solid fa-graduation-cap text-3xl"></i>
                                 </div>
                                 <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">Dogye Archive</h1>
-                                <p className="text-slate-500 text-sm mt-1 font-semibold text-blue-600">v 3.1 클라우드 엔진</p>
+                                <p className="text-slate-500 text-sm mt-1 font-semibold text-blue-600">v 3.2 클라우드 엔진</p>
                             </div>
 
                             <div className="flex bg-slate-100 p-1 rounded-xl mb-6">
@@ -669,7 +766,7 @@
                                 <div className="bg-blue-600 text-white p-2 rounded-lg"><i className="fa-solid fa-graduation-cap text-xl"></i></div>
                                 <div>
                                     <h1 className="text-lg font-extrabold text-slate-900 tracking-tight flex items-center gap-1.5">
-                                        Dogye Archive 3.1
+                                        Dogye Archive 3.2
                                         {isLocalMode ? (
                                             <span onClick={() => {
                                                 triggerAlert("현재 브라우저 보안 정책으로 인해 오프라인 상태입니다.\n\n해결방법 1: 깃허브 페이지로 코드를 배포한 뒤 접속하세요.\n해결방법 2: VS Code의 Live Server(포트 5500 등)로 열어주세요.", "오프라인 모드 원인 분석");
@@ -684,7 +781,7 @@
                             <div className="flex items-center space-x-4">
                                 <span className="text-sm font-bold text-slate-800 hidden sm:inline-block">{user.name}님</span>
                                 {user.role === 'admin' && (
-                                    <button onClick={() => setIsAdminConsoleOpen(true)} className="text-slate-400 hover:text-slate-800 transition-all mr-1" title="관리자 콘솔 열기">
+                                    <button onClick={() => { setIsAdminConsoleOpen(true); setAdminTab("config"); }} className="text-slate-400 hover:text-slate-800 transition-all mr-1 animate-pulse" title="최고 관리자 콘솔 열기">
                                         <i className="fa-solid fa-gear text-lg"></i>
                                     </button>
                                 )}
@@ -1011,28 +1108,92 @@
                         </div>
                     )}
 
-                    {/* ⚙️ 최고 관리자 콘솔 모달 */}
+                    {/* ⚙️ 최고 관리자 콘솔 모달 (3.2 통합 허브 버전) */}
                     {isAdminConsoleOpen && (
                         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                            <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full overflow-hidden border border-slate-200">
-                                <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-800 text-white">
-                                    <h2 className="text-base font-bold"><i className="fa-solid fa-gear text-slate-300 mr-2"></i>최고 관리자 콘솔</h2>
-                                    <button onClick={() => setIsAdminConsoleOpen(false)} className="text-slate-400 hover:text-white"><i className="fa-solid fa-xmark text-lg"></i></button>
+                            <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200">
+                                <div className="p-5 border-b border-slate-100 bg-slate-800 text-white">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <h2 className="text-base font-bold"><i className="fa-solid fa-gear text-slate-300 mr-2"></i>최고 관리자 마스터 콘솔</h2>
+                                        <button onClick={() => setIsAdminConsoleOpen(false)} className="text-slate-400 hover:text-white"><i className="fa-solid fa-xmark text-lg"></i></button>
+                                    </div>
+                                    
+                                    {/* ⚙️ 관리자 제어 탭 */}
+                                    <div className="flex bg-slate-700/60 p-0.5 rounded-lg text-xs font-semibold">
+                                        <button onClick={() => setAdminTab("config")} className={`flex-1 py-1.5 rounded-md transition-all ${adminTab === 'config' ? 'bg-slate-900 text-white' : 'text-slate-300 hover:text-white'}`}>📢 공지 & 학사일정</button>
+                                        <button onClick={() => setAdminTab("users")} className={`flex-1 py-1.5 rounded-md transition-all ${adminTab === 'users' ? 'bg-slate-900 text-white' : 'text-slate-300 hover:text-white'}`}>👥 학생 정보 관리 ({usersList.length})</button>
+                                    </div>
                                 </div>
-                                <form onSubmit={handleAdminSettingsSave} className="p-6 space-y-5">
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 mb-1.5">수능 날짜 설정</label>
-                                        <input type="date" value={editDday.csat} onChange={(e)=>setEditDday({...editDday, csat: e.target.value})} className="w-full px-3 py-2 border rounded-xl text-sm focus:ring-1 focus:ring-blue-500" required />
+
+                                {adminTab === "config" ? (
+                                    <form onSubmit={handleAdminSettingsSave} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                                        {/* 📢 공지사항 전면 수정 기능 신설 */}
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 mb-1.5">🚨 실시간 전교생 상단 공지 수정</label>
+                                            <textarea 
+                                                value={editNotice} 
+                                                onChange={(e) => setEditNotice(e.target.value)} 
+                                                rows="2" 
+                                                className="w-full px-3 py-2 border rounded-xl text-xs focus:ring-1 focus:ring-blue-500 resize-none" 
+                                                placeholder="공지할 내용을 자유롭게 적으세요."
+                                                required
+                                            ></textarea>
+                                        </div>
+
+                                        <div className="border-t border-slate-100 pt-3">
+                                            <label className="block text-xs font-bold text-slate-500 mb-1.5">수능 날짜 설정</label>
+                                            <input type="date" value={editDday.csat} onChange={(e)=>setEditDday({...editDday, csat: e.target.value})} className="w-full px-3 py-2 border rounded-xl text-xs focus:ring-1 focus:ring-blue-500" required />
+                                        </div>
+
+                                        <div className="border-t border-slate-100 pt-3">
+                                            <label className="block text-xs font-bold text-slate-500 mb-1.5">내신 시험 이름 (예: 2학기 중간고사)</label>
+                                            <input type="text" placeholder="시험 이름 입력" value={editDday.examName} onChange={(e)=>setEditDday({...editDday, examName: e.target.value})} className="w-full px-3 py-2 border rounded-xl text-xs focus:ring-1 focus:ring-blue-500 mb-3" required />
+                                            
+                                            <label className="block text-xs font-bold text-slate-500 mb-1.5">내신 시험 날짜</label>
+                                            <input type="date" value={editDday.examDate} onChange={(e)=>setEditDday({...editDday, examDate: e.target.value})} className="w-full px-3 py-2 border rounded-xl text-xs focus:ring-1 focus:ring-blue-500" required />
+                                        </div>
+
+                                        <button type="submit" className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-xl shadow text-sm transition-all">설정 및 공지 클라우드 즉시 게시</button>
+                                    </form>
+                                ) : (
+                                    <div className="p-5 space-y-4">
+                                        <div className="relative">
+                                            <span className="absolute inset-y-0 left-0 flex items-center pl-2 text-slate-400"><i className="fa-solid fa-magnifying-glass text-xs"></i></span>
+                                            <input 
+                                                type="text" 
+                                                placeholder="이름, 학년, 이메일로 가입자 조회" 
+                                                value={userSearchQuery}
+                                                onChange={(e) => setUserSearchQuery(e.target.value)}
+                                                className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:ring-1 focus:ring-blue-500"
+                                            />
+                                        </div>
+
+                                        {/* 가입된 학생 목록 테이블 */}
+                                        <div className="max-h-[50vh] overflow-y-auto border border-slate-100 rounded-xl divide-y divide-slate-100 bg-slate-50">
+                                            {filteredUsers.map(u => (
+                                                <div key={u.id || u.email} className="p-3 flex items-center justify-between text-xs hover:bg-slate-100 transition-all">
+                                                    <div className="overflow-hidden pr-2">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="font-bold text-slate-800">{u.name}</span>
+                                                            <span className="bg-slate-200 text-slate-600 text-[9px] px-1.5 py-0.5 rounded-full font-bold">{u.grade}</span>
+                                                        </div>
+                                                        <div className="text-slate-400 text-[10px] truncate">{u.email}</div>
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => deleteUser(u.email)} 
+                                                        className="text-red-500 hover:bg-red-50 px-2.5 py-1.5 rounded-lg border border-red-200 hover:border-red-500 font-bold text-[10px] transition-all shrink-0"
+                                                        title="이 계정을 강제 제명 및 데이터 탈퇴 처리합니다."
+                                                    >
+                                                        강제 탈퇴
+                                                    </button>
+                                                </div>
+                                            ))}
+                                            {filteredUsers.length === 0 && (
+                                                <div className="py-12 text-center text-slate-400 text-xs font-semibold">조건에 일치하는 등록 학생이 없습니다.</div>
+                                            )}
+                                        </div>
                                     </div>
-                                    <div className="border-t border-slate-100 pt-4">
-                                        <label className="block text-xs font-bold text-slate-500 mb-1.5">내신 시험 이름 (예: 1학기 중간고사)</label>
-                                        <input type="text" placeholder="시험 이름 입력" value={editDday.examName} onChange={(e)=>setEditDday({...editDday, examName: e.target.value})} className="w-full px-3 py-2 border rounded-xl text-sm focus:ring-1 focus:ring-blue-500 mb-3" required />
-                                        
-                                        <label className="block text-xs font-bold text-slate-500 mb-1.5">내신 시험 날짜</label>
-                                        <input type="date" value={editDday.examDate} onChange={(e)=>setEditDday({...editDday, examDate: e.target.value})} className="w-full px-3 py-2 border rounded-xl text-sm focus:ring-1 focus:ring-blue-500" required />
-                                    </div>
-                                    <button type="submit" className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-xl shadow text-sm">일정 변경사항 클라우드 적용</button>
-                                </form>
+                                )}
                             </div>
                         </div>
                     )}
