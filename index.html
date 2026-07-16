@@ -160,6 +160,14 @@
             const [isAdminConsoleOpen, setIsAdminConsoleOpen] = useState(false);
             const [usersList, setUsersList] = useState([]);
 
+            // 일정 설정 (D-Day)
+            const [ddaySettings, setDdaySettings] = useState({
+                csat: '2026-11-12',
+                examName: '2학기 기말고사',
+                examDate: '2026-12-10'
+            });
+            const [editDday, setEditDday] = useState({ ...ddaySettings });
+
             // 커스텀 알림
             const [commentInput, setCommentInput] = useState("");
             const [toast, setToast] = useState(null);
@@ -216,6 +224,16 @@
                         });
                         localStorage.setItem("dogye_archive_users", JSON.stringify(localUsers));
                     }
+
+                    // 오프라인 상태일 때 로컬에 저장된 D-Day 정보 불러오기
+                    const savedDday = localStorage.getItem("dogye_dday_settings");
+                    if (savedDday) {
+                        try {
+                            const parsed = JSON.parse(savedDday);
+                            setDdaySettings(parsed);
+                            setEditDday(parsed);
+                        } catch(e) {}
+                    }
                 };
 
                 restoreAndSetupLocal();
@@ -231,6 +249,7 @@
                                     setIsLocalMode(false);
                                     listenToCloudMaterials();
                                     listenToCloudQna();
+                                    listenToCloudSettings();
                                 }
                                 setIsFirebaseLoading(false);
                             });
@@ -275,6 +294,19 @@
                     snapshot.forEach((d) => { qList.push({ ...d.data(), id: d.id }); });
                     qList.sort((a, b) => b.date.localeCompare(a.date));
                     setQnaList(qList);
+                });
+            };
+
+            // Firestore 실시간 리스너 (일정 설정)
+            const listenToCloudSettings = () => {
+                const { doc, onSnapshot } = window.firebaseMethods;
+                const settingsRef = doc(window.db, 'artifacts', window.appId, 'public', 'data', 'settings', 'dday');
+                
+                onSnapshot(settingsRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        setDdaySettings(docSnap.data());
+                        setEditDday(docSnap.data());
+                    }
                 });
             };
 
@@ -399,7 +431,7 @@
                             // Firestore 데이터베이스에 문서 기록
                             await setDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'materials', newId), formatDoc);
                             
-                            showToast("진짜 파일 자료 기부가 완벽하게 등록되었습니다!");
+                            showToast("진짜 파일 자료 제공이 완벽하게 등록되었습니다!");
                             setIsUploadOpen(false);
                             
                             // 폼 초기화
@@ -540,6 +572,24 @@
                 });
             }
 
+            // 관리자 콘솔 설정 저장 로직
+            const handleAdminSettingsSave = async (e) => {
+                e.preventDefault();
+                setDdaySettings(editDday);
+                localStorage.setItem("dogye_dday_settings", JSON.stringify(editDday));
+
+                if (!isLocalMode && window.firebaseMethods) {
+                    const { doc, setDoc } = window.firebaseMethods;
+                    try {
+                        await setDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'settings', 'dday'), editDday);
+                    } catch (err) {
+                        console.error(err);
+                    }
+                }
+                showToast("학사일정 설정이 클라우드에 갱신되었습니다!");
+                setIsAdminConsoleOpen(false);
+            };
+
             const isPdfOrImage = (filename) => {
                 if (!filename) return false;
                 const ext = filename.split('.').pop().toLowerCase();
@@ -578,7 +628,7 @@
                                     <i className="fa-solid fa-graduation-cap text-3xl"></i>
                                 </div>
                                 <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">Dogye Archive</h1>
-                                <p className="text-slate-500 text-sm mt-1 font-semibold text-blue-600">v 3.0 클라우드 엔진</p>
+                                <p className="text-slate-500 text-sm mt-1 font-semibold text-blue-600">v 3.1 클라우드 엔진</p>
                             </div>
 
                             <div className="flex bg-slate-100 p-1 rounded-xl mb-6">
@@ -619,7 +669,7 @@
                                 <div className="bg-blue-600 text-white p-2 rounded-lg"><i className="fa-solid fa-graduation-cap text-xl"></i></div>
                                 <div>
                                     <h1 className="text-lg font-extrabold text-slate-900 tracking-tight flex items-center gap-1.5">
-                                        Dogye Archive 3.0
+                                        Dogye Archive 3.1
                                         {isLocalMode ? (
                                             <span onClick={() => {
                                                 triggerAlert("현재 브라우저 보안 정책으로 인해 오프라인 상태입니다.\n\n해결방법 1: 깃허브 페이지로 코드를 배포한 뒤 접속하세요.\n해결방법 2: VS Code의 Live Server(포트 5500 등)로 열어주세요.", "오프라인 모드 원인 분석");
@@ -633,6 +683,11 @@
                             
                             <div className="flex items-center space-x-4">
                                 <span className="text-sm font-bold text-slate-800 hidden sm:inline-block">{user.name}님</span>
+                                {user.role === 'admin' && (
+                                    <button onClick={() => setIsAdminConsoleOpen(true)} className="text-slate-400 hover:text-slate-800 transition-all mr-1" title="관리자 콘솔 열기">
+                                        <i className="fa-solid fa-gear text-lg"></i>
+                                    </button>
+                                )}
                                 <button onClick={handleLogout} className="text-slate-400 hover:text-red-500 transition-all"><i className="fa-solid fa-right-from-bracket text-lg"></i></button>
                             </div>
                         </div>
@@ -649,30 +704,21 @@
 
                     <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full space-y-6">
                         
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="bg-gradient-to-br from-indigo-500 to-blue-600 rounded-2xl p-5 text-white shadow-md flex items-center justify-between">
                                 <div>
                                     <p className="text-blue-100 text-xs font-bold mb-1">도계고 3학년 수능 카운터</p>
-                                    <h2 className="text-2xl font-extrabold tracking-tight">2027 수능 D-{calculateDday('2026-11-12')}</h2>
+                                    <h2 className="text-2xl font-extrabold tracking-tight">{new Date(ddaySettings.csat).getFullYear()} 수능 D-{calculateDday(ddaySettings.csat)}</h2>
                                 </div>
                                 <div className="text-4xl text-white/30"><i className="fa-solid fa-clock-rotate-left"></i></div>
                             </div>
                             
                             <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-5 text-white shadow-md flex items-center justify-between">
                                 <div>
-                                    <p className="text-teal-100 text-xs font-bold mb-1">2학기 기말고사 대비</p>
-                                    <h2 className="text-2xl font-extrabold tracking-tight">기말고사 D-{calculateDday('2026-12-10')}</h2>
+                                    <p className="text-teal-100 text-xs font-bold mb-1">내신 만점 대비</p>
+                                    <h2 className="text-2xl font-extrabold tracking-tight">{ddaySettings.examName} D-{calculateDday(ddaySettings.examDate)}</h2>
                                 </div>
                                 <div className="text-4xl text-white/30"><i className="fa-solid fa-calendar-check"></i></div>
-                            </div>
-
-                            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-col justify-center relative overflow-hidden">
-                                <div className="absolute top-0 right-0 w-24 h-24 bg-orange-50 rounded-bl-full -z-10"></div>
-                                <div className="flex justify-between items-start mb-2">
-                                    <p className="text-slate-500 text-xs font-bold flex items-center gap-1.5"><i className="fa-solid fa-utensils text-orange-400"></i> 오늘의 점심 급식</p>
-                                    <span className="text-[10px] bg-slate-100 text-slate-400 px-2 rounded-full">실시간</span>
-                                </div>
-                                <p className="text-sm font-bold text-slate-700 leading-snug">현미밥, 돈육김치찌개, 언양식바싹불고기, 계란말이, 깍두기, 포도</p>
                             </div>
                         </div>
 
@@ -705,7 +751,7 @@
                                     onClick={() => activeMainTab === 'materials' ? setIsUploadOpen(true) : setIsQnaWriteOpen(true)}
                                     className="w-full sm:w-auto shrink-0 bg-slate-800 hover:bg-slate-900 text-white font-bold px-5 py-2.5 rounded-xl shadow-sm transition-all text-sm flex items-center justify-center gap-1.5">
                                     <i className={`fa-solid ${activeMainTab === 'materials' ? 'fa-upload' : 'fa-pen'}`}></i>
-                                    {activeMainTab === 'materials' ? '파일 기부하기' : '질문 작성하기'}
+                                    {activeMainTab === 'materials' ? '파일 제공하기' : '질문 작성하기'}
                                 </button>
                             </div>
 
@@ -753,7 +799,7 @@
                                         </div>
                                     </div>
                                 ))}
-                                {filteredMaterials.length === 0 && <div className="col-span-full py-16 text-center text-slate-400">자료가 없습니다. 첫 기부자가 되어주세요!</div>}
+                                {filteredMaterials.length === 0 && <div className="col-span-full py-16 text-center text-slate-400">자료가 없습니다. 첫 제공자가 되어주세요!</div>}
                             </div>
                         ) : (
                             <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
@@ -762,7 +808,7 @@
                                         <li key={qna.id} className="p-5 hover:bg-slate-50 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4" onClick={() => setSelectedQna(qna)}>
                                             <div className="flex-1">
                                                 <div className="flex gap-1.5 mb-1.5">
-                                                    <span className="bg-purple-100 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded">{qna.subject}</span>
+                                                    <span className="bg-purple-100 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded mb-2 inline-block">{qna.subject}</span>
                                                     {qna.answers > 0 && <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded">답변완료</span>}
                                                 </div>
                                                 <h3 className="text-sm font-bold text-slate-800">{qna.title}</h3>
@@ -921,7 +967,7 @@
                         </div>
                     )}
 
-                    {/* 자료 기부 모달 (진짜 파일 업로드 + 프로그레스 바) */}
+                    {/* 자료 제공 모달 (진짜 파일 업로드 + 프로그레스 바) */}
                     {isUploadOpen && (
                         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                             <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200">
@@ -960,6 +1006,32 @@
                                     <button type="submit" disabled={uploadProgress > 0} className={`w-full font-bold py-3 rounded-xl shadow-md text-sm transition-all ${uploadProgress > 0 ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
                                         {uploadProgress > 0 ? '서버에 저장 중입니다...' : '도계 아카이브 등재 신청'}
                                     </button>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ⚙️ 최고 관리자 콘솔 모달 */}
+                    {isAdminConsoleOpen && (
+                        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                            <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full overflow-hidden border border-slate-200">
+                                <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-800 text-white">
+                                    <h2 className="text-base font-bold"><i className="fa-solid fa-gear text-slate-300 mr-2"></i>최고 관리자 콘솔</h2>
+                                    <button onClick={() => setIsAdminConsoleOpen(false)} className="text-slate-400 hover:text-white"><i className="fa-solid fa-xmark text-lg"></i></button>
+                                </div>
+                                <form onSubmit={handleAdminSettingsSave} className="p-6 space-y-5">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 mb-1.5">수능 날짜 설정</label>
+                                        <input type="date" value={editDday.csat} onChange={(e)=>setEditDday({...editDday, csat: e.target.value})} className="w-full px-3 py-2 border rounded-xl text-sm focus:ring-1 focus:ring-blue-500" required />
+                                    </div>
+                                    <div className="border-t border-slate-100 pt-4">
+                                        <label className="block text-xs font-bold text-slate-500 mb-1.5">내신 시험 이름 (예: 1학기 중간고사)</label>
+                                        <input type="text" placeholder="시험 이름 입력" value={editDday.examName} onChange={(e)=>setEditDday({...editDday, examName: e.target.value})} className="w-full px-3 py-2 border rounded-xl text-sm focus:ring-1 focus:ring-blue-500 mb-3" required />
+                                        
+                                        <label className="block text-xs font-bold text-slate-500 mb-1.5">내신 시험 날짜</label>
+                                        <input type="date" value={editDday.examDate} onChange={(e)=>setEditDday({...editDday, examDate: e.target.value})} className="w-full px-3 py-2 border rounded-xl text-sm focus:ring-1 focus:ring-blue-500" required />
+                                    </div>
+                                    <button type="submit" className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-xl shadow text-sm">일정 변경사항 클라우드 적용</button>
                                 </form>
                             </div>
                         </div>
