@@ -84,6 +84,7 @@
             window.dispatchEvent(new Event('firebase-initialized'));
         } catch (err) {
             console.warn("Firebase initialization failed. Operating on Secure Offline mode.", err);
+            window.firebaseInitError = err.message || String(err);
             window.firebaseMethods = null;
             window.dispatchEvent(new Event('firebase-initialized'));
         }
@@ -183,6 +184,7 @@
             const [isLoginView, setIsLoginView] = useState(true);
             const [isLocalMode, setIsLocalMode] = useState(true); 
             const [isFirebaseLoading, setIsFirebaseLoading] = useState(true);
+            const [firebaseError, setFirebaseError] = useState("");
             
             // 가입 폼 상태
             const [signUpEmail, setSignUpEmail] = useState("");
@@ -204,7 +206,7 @@
             const [activeTypeFilter, setActiveTypeFilter] = useState("전체");
             
             // 글로벌 실시간 긴급 공지 배너
-            const [noticeText, setNoticeText] = useState("도계고등학교 학습 아카이브에 오신 것을 환영합니다! 검증된 공부 자료를 기부하고 학우들과 나눠보세요.");
+            const [noticeText, setNoticeText] = useState("도계고등학교 학습 아카이브에 오신 것을 환영합니다! 검증된 공부 자료를 기부하고 다른 학생들과 나눠보세요.");
             const [noticeEditor, setNoticeEditor] = useState("");
 
             // 업로드 폼 모달 및 첨부파일 관리
@@ -304,6 +306,9 @@
                 restoreAndSetupLocal();
 
                 const tryFirebaseSync = () => {
+                    if (window.firebaseInitError) {
+                        setFirebaseError(window.firebaseInitError);
+                    }
                     if (window.firebaseMethods) {
                         const { onAuthStateChanged, signInAnonymously } = window.firebaseMethods;
                         const auth = window.auth;
@@ -318,11 +323,15 @@
                                 setIsFirebaseLoading(false);
                             });
                         }).catch((err) => {
-                            console.log("Firestore offline. Safe local sandbox engine is running.");
+                            console.log("Firestore offline. Safe local sandbox engine is running.", err);
+                            setFirebaseError(err.message || String(err));
                             setIsLocalMode(true);
                             setIsFirebaseLoading(false);
                         });
                     } else {
+                        if (!window.firebaseInitError) {
+                            setFirebaseError("Firebase 라이브러리가 로드되지 않았거나 초기화 스크립트 실행이 취소되었습니다.");
+                        }
                         setIsLocalMode(true);
                         setIsFirebaseLoading(false);
                     }
@@ -426,7 +435,7 @@
                     if (found.password === loginPassword) {
                         setUser(found);
                         localStorage.setItem("dogye_current_user", JSON.stringify(found));
-                        showToast(`반가워요, ${found.name}!`);
+                        showToast(`반가워요, ${found.name}님!`);
                     } else {
                         triggerAlert("패스워드가 잘못 지정되었습니다. 다시 시도해 주세요.", "인증 불일치");
                     }
@@ -456,7 +465,7 @@
 
                 const localUsers = JSON.parse(localStorage.getItem("dogye_archive_users") || "[]");
                 if (localUsers.some(u => u.email === signUpEmail)) {
-                    triggerAlert("해당 학우 이메일은 이미 아카이브에 승인 등록되어 있습니다.", "가입 중복");
+                    triggerAlert("해당 이메일은 이미 아카이브에 승인 등록되어 있습니다.", "가입 중복");
                     return;
                 }
 
@@ -918,7 +927,7 @@
                             ) : (
                                 <form onSubmit={handleSignUp} className="space-y-4">
                                     <div>
-                                        <label className="block text-sm font-semibold text-slate-700 mb-1">학우 성함</label>
+                                        <label className="block text-sm font-semibold text-slate-700 mb-1">이름</label>
                                         <div className="relative">
                                             <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
                                                 <i className="fa-solid fa-user"></i>
@@ -1013,11 +1022,21 @@
                                     <h1 className="text-lg font-extrabold text-slate-900 tracking-tight flex items-center gap-1.5">
                                         Dogye Archive
                                         {isLocalMode ? (
-                                            <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
-                                                🟢 로컬 테스트 모드
-                                            </span>
+                                            <button 
+                                                onClick={() => triggerAlert(
+                                                    `현재 오프라인 또는 PC 폴더에서 직접 열어 로컬 브라우저 보안 임시 모드로 실행 중입니다.\n\n` +
+                                                    `💡 [해결 가이드]\n` +
+                                                    `1. 이 웹사이트를 깃허브 Pages(https://) 주소로 정식 배포하시거나,\n` +
+                                                    `2. VS Code에서 Live Server(http://localhost) 기능을 사용해 실행해 보세요.\n` +
+                                                    `3. Firebase 콘솔의 Auth 탭에서 '익명 로그인'이 활성화되어 있는지 최종 확인해 보세요!\n\n` +
+                                                    `⚠️ 원인 추적 디버그 메세지:\n${firebaseError || "연결 세션 대기 중..."}`,
+                                                    "로컬 모드 실행 가이드 및 원인 분석"
+                                                )}
+                                                className="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-[9px] font-bold px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1 transition-all cursor-pointer">
+                                                🟢 로컬 테스트 모드 ❓
+                                            </button>
                                         ) : (
-                                            <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-2 py-0.5 rounded-full border border-blue-200 flex items-center gap-1">
+                                            <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-2 py-0.5 rounded-full border border-blue-200 flex items-center gap-1 animate-pulse">
                                                 🌐 클라우드 실시간 동기화
                                             </span>
                                         )}
@@ -1034,7 +1053,7 @@
                                                 👑 최고 관리자
                                             </span>
                                         )}
-                                        <span className="text-sm font-bold text-slate-800">{user.name}</span>
+                                        <span className="text-sm font-bold text-slate-800">{user.name}님</span>
                                     </div>
                                     <span className="text-xs text-slate-400">{user.grade}</span>
                                 </div>
@@ -1094,7 +1113,7 @@
                                     </span>
                                     <input 
                                         type="text" 
-                                        placeholder="과목, 단원, 혹은 기증한 학우 이름을 적고 기출 분석 자료를 검색해 보세요."
+                                        placeholder="과목, 단원, 혹은 작성자 이름을 적고 기출 분석 자료를 검색해 보세요."
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
                                         className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all text-sm"
@@ -1197,7 +1216,7 @@
 
                                     <div className="bg-slate-50 px-6 py-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
                                         <div className="flex items-center space-x-1">
-                                            <span className="font-semibold text-slate-600">{mat.uploader} 학우</span>
+                                            <span className="font-semibold text-slate-600">{mat.uploader}</span>
                                             <span className="text-[9px] text-slate-300">|</span>
                                             <span>{mat.date}</span>
                                         </div>
@@ -1300,7 +1319,7 @@
 
                                     <div className="flex items-center justify-between text-xs text-slate-400 border-b border-slate-100 pb-4">
                                         <div className="flex items-center space-x-2">
-                                            <span>기증학우: <b className="text-slate-600">{selectedMaterial.uploader}</b></span>
+                                            <span>작성자: <b className="text-slate-600">{selectedMaterial.uploader}</b></span>
                                             <span>•</span>
                                             <span>등록일자: {selectedMaterial.date}</span>
                                         </div>
@@ -1542,7 +1561,7 @@
                                             <table className="w-full text-left border-collapse text-xs">
                                                 <thead>
                                                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold">
-                                                        <th className="p-3">학우 성함</th>
+                                                        <th className="p-3">이름</th>
                                                         <th className="p-3">인가 학년</th>
                                                         <th className="p-3">등록 고유 이메일</th>
                                                         <th className="p-3">계정 등급</th>
