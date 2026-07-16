@@ -50,8 +50,10 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // 🚀 추가됨: Firebase Storage 연동 (진짜 파일 업로드/다운로드용)
+        import { getStorage, ref, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
-        // 전성민 학우님의 진짜 Firebase API 설정값 연동완료
+        // 전성민님의 진짜 Firebase API 설정값 연동완료
         const firebaseConfig = {
             apiKey: "AIzaSyBBDLP4uI9Mom_UMxKvnYDq9f2V72Y1fB4",
             authDomain: "dogye-archive.firebaseapp.com",
@@ -65,9 +67,11 @@
             const app = initializeApp(firebaseConfig);
             const db = getFirestore(app);
             const auth = getAuth(app);
+            const storage = getStorage(app); // Storage 초기화
 
             window.db = db;
             window.auth = auth;
+            window.storage = storage; // Storage 전역 객체 등록
             window.appId = "dogye-archive-app";
             window.firebaseMethods = {
                 signInAnonymously,
@@ -79,7 +83,11 @@
                 deleteDoc,
                 collection,
                 addDoc,
-                onSnapshot
+                onSnapshot,
+                ref, // Storage reference
+                uploadBytesResumable,
+                getDownloadURL,
+                deleteObject
             };
             window.dispatchEvent(new Event('firebase-initialized'));
         } catch (err) {
@@ -91,7 +99,7 @@
     </script>
 
     <script type="text/babel">
-        // 브라우저 대용량 저장소 IndexedDB (실제 파일 첨부 및 다운로드용)
+        // 브라우저 대용량 저장소 IndexedDB (오프라인 모드용 예비 저장소)
         const DB_NAME = "DogyeArchiveDB";
         const STORE_NAME = "materials_files";
 
@@ -135,49 +143,7 @@
 
         const { useState, useEffect, useRef } = React;
 
-        // 도계고등학교 소속 검증 도메인
         const SCHOOL_DOMAIN = "dogye.hs.kr";
-
-        const INITIAL_MATERIALS = [
-            {
-                id: "1",
-                title: "도계고 2학년 1학기 중간고사 물리학I 기출 경향 및 킬러 문항 분석",
-                grade: "2학년",
-                subject: "물리학 I",
-                type: "기출 분석",
-                uploader: "전성민",
-                uploaderEmail: "sungmin@dogye.hs.kr",
-                fileType: "pdf",
-                fileName: "Dogye_Physics1_Midterm_Analysis.pdf",
-                fileSize: 1845210,
-                downloads: 48,
-                likes: 18,
-                isVerified: true,
-                description: "작년 도계고 물리학 I 기출 문항 중 역학적 에너지 보존 법칙인 $E_k + E_p = \\text{const}$ 파트의 핵심 킬러 문항을 정밀하게 분석하고 변형 기출 3선 풀이를 추가한 자료집입니다.",
-                comments: [
-                    { id: "c1", author: "김민혁", text: "역학 변형 공식 정리 대박이네요... 물리 지필평가 때 정말 많이 도움 받았습니다!", date: "2026-07-14" }
-                ],
-                date: "2026-07-12"
-            },
-            {
-                id: "2",
-                title: "3학년 영어 독해와 작문 수행평가 만점 에세이 구조 가이드라인",
-                grade: "3학년",
-                subject: "영어",
-                type: "수행평가 대비",
-                uploader: "이지은",
-                uploaderEmail: "jieun@dogye.hs.kr",
-                fileType: "hwp",
-                fileName: "Dogye_English_Essay_Structure.hwp",
-                fileSize: 412500,
-                downloads: 134,
-                likes: 52,
-                isVerified: false,
-                description: "고득점 영작문을 빠르게 기획할 수 있도록 설계한 서론-본론-결론 템플릿입니다. 문법적 실수를 유발하기 쉬운 포인트를 짚어둔 유용한 영어 구문 정리집입니다.",
-                comments: [],
-                date: "2026-07-14"
-            }
-        ];
 
         function App() {
             const [user, setUser] = useState(null); 
@@ -186,6 +152,9 @@
             const [isFirebaseLoading, setIsFirebaseLoading] = useState(true);
             const [firebaseError, setFirebaseError] = useState("");
             
+            // UI 탭 상태 (학습 자료실 vs Q&A 게시판)
+            const [activeMainTab, setActiveMainTab] = useState("materials"); // "materials" | "qna"
+
             // 가입 폼 상태
             const [signUpEmail, setSignUpEmail] = useState("");
             const [signUpPassword, setSignUpPassword] = useState("");
@@ -197,32 +166,47 @@
             const [loginEmail, setLoginEmail] = useState("");
             const [loginPassword, setLoginPassword] = useState("");
             
-            // 메인 데이터 상태 및 정렬/필터 필터링
+            // 메인 데이터 (자료실 & Q&A)
             const [materials, setMaterials] = useState([]);
+            const [qnaList, setQnaList] = useState([]);
+            
             const [selectedMaterial, setSelectedMaterial] = useState(null);
+            const [selectedQna, setSelectedQna] = useState(null);
             const [searchQuery, setSearchQuery] = useState("");
+            
+            // 필터링
             const [activeGradeFilter, setActiveGradeFilter] = useState("전체");
             const [activeSubjectFilter, setActiveSubjectFilter] = useState("전체");
             const [activeTypeFilter, setActiveTypeFilter] = useState("전체");
             
-            // 글로벌 실시간 긴급 공지 배너
-            const [noticeText, setNoticeText] = useState("도계고등학교 학습 아카이브에 오신 것을 환영합니다! 검증된 공부 자료를 기부하고 다른 학생들과 나눠보세요.");
+            // 모달 관리
+            const [isUploadOpen, setIsUploadOpen] = useState(false);
+            const [isQnaWriteOpen, setIsQnaWriteOpen] = useState(false);
+            const [isPreviewMode, setIsPreviewMode] = useState(false); // 미리보기 모드 상태
+            
+            // 글로벌 실시간 공지
+            const [noticeText, setNoticeText] = useState("도계고등학교 학습 아카이브 3.0에 오신 것을 환영합니다! 자료를 나누고 함께 성장해 보세요.");
             const [noticeEditor, setNoticeEditor] = useState("");
 
             // 업로드 폼 모달 및 첨부파일 관리
-            const [isUploadOpen, setIsUploadOpen] = useState(false);
             const [newTitle, setNewTitle] = useState("");
             const [newSubject, setNewSubject] = useState("물리학 I");
             const [newGrade, setNewGrade] = useState("1학년");
             const [newType, setNewType] = useState("요약 노트");
             const [newFile, setNewFile] = useState(null); 
             const [newDescription, setNewDescription] = useState("");
+            const [uploadProgress, setUploadProgress] = useState(0); // 파일 업로드 진행률
+
+            // Q&A 작성 폼
+            const [newQnaTitle, setNewQnaTitle] = useState("");
+            const [newQnaContent, setNewQnaContent] = useState("");
+            const [newQnaSubject, setNewQnaSubject] = useState("전체");
             
             // 최고 관리자 대시보드
             const [isAdminConsoleOpen, setIsAdminConsoleOpen] = useState(false);
             const [usersList, setUsersList] = useState([]);
 
-            // 커스텀 알림 모달 & 피드백 토스트
+            // 커스텀 알림
             const [commentInput, setCommentInput] = useState("");
             const [toast, setToast] = useState(null);
             const [customConfirm, setCustomConfirm] = useState(null);
@@ -246,51 +230,42 @@
             };
 
             const isAdministrator = (email) => {
-                return email === "sungmin@dogye.hs.kr" || email === "admin@dogye.hs.kr";
+                return email === "admin@dogye.hs.kr";
             };
 
             const isValidSchoolEmail = (email) => {
                 return email.endsWith(`@${SCHOOL_DOMAIN}`);
             };
 
+            // D-Day 계산기 로직
+            const calculateDday = (targetDateStr) => {
+                const today = new Date();
+                // 날짜만 비교하기 위해 시간 초기화
+                today.setHours(0, 0, 0, 0); 
+                const targetDate = new Date(targetDateStr);
+                targetDate.setHours(0, 0, 0, 0);
+                const diffTime = targetDate - today;
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                return diffDays;
+            };
+
             useEffect(() => {
                 const restoreAndSetupLocal = () => {
-                    // 로그인 캐시 로드
                     const savedUser = localStorage.getItem("dogye_current_user");
                     if (savedUser) {
-                        try {
-                            setUser(JSON.parse(savedUser));
-                        } catch (e) {
-                            localStorage.removeItem("dogye_current_user");
-                        }
+                        try { setUser(JSON.parse(savedUser)); } catch (e) {}
                     }
-
-                    // 로컬 학습 자료 데이터 로드
                     const savedMaterials = localStorage.getItem("dogye_archive_materials");
-                    if (!savedMaterials) {
-                        localStorage.setItem("dogye_archive_materials", JSON.stringify(INITIAL_MATERIALS));
-                        setMaterials(INITIAL_MATERIALS);
-                    } else {
-                        try {
-                            setMaterials(JSON.parse(savedMaterials));
-                        } catch (e) {
-                            setMaterials(INITIAL_MATERIALS);
-                        }
+                    if (savedMaterials) {
+                        try { setMaterials(JSON.parse(savedMaterials)); } catch (e) {}
                     }
-
-                    // 로컬 공지사항 로드
-                    const savedNotice = localStorage.getItem("dogye_archive_notice");
-                    if (savedNotice) {
-                        setNoticeText(savedNotice);
-                        setNoticeEditor(savedNotice);
-                    } else {
-                        setNoticeEditor(noticeText);
+                    const savedQna = localStorage.getItem("dogye_archive_qna");
+                    if (savedQna) {
+                        try { setQnaList(JSON.parse(savedQna)); } catch (e) {}
                     }
-
-                    // 관리자 계정 생성 (로컬 모드 가동용)
+                    
                     const localUsers = JSON.parse(localStorage.getItem("dogye_archive_users") || "[]");
-                    const adminExists = localUsers.some(u => u.email === "admin@dogye.hs.kr");
-                    if (!adminExists) {
+                    if (!localUsers.some(u => u.email === "admin@dogye.hs.kr")) {
                         localUsers.push({
                             name: "최고관리자",
                             email: "admin@dogye.hs.kr",
@@ -306,9 +281,6 @@
                 restoreAndSetupLocal();
 
                 const tryFirebaseSync = () => {
-                    if (window.firebaseInitError) {
-                        setFirebaseError(window.firebaseInitError);
-                    }
                     if (window.firebaseMethods) {
                         const { onAuthStateChanged, signInAnonymously } = window.firebaseMethods;
                         const auth = window.auth;
@@ -318,63 +290,64 @@
                                 if (fUser) {
                                     setIsLocalMode(false);
                                     listenToCloudMaterials();
+                                    listenToCloudQna();
                                     listenToCloudNotice();
                                 }
                                 setIsFirebaseLoading(false);
                             });
                         }).catch((err) => {
-                            console.log("Firestore offline. Safe local sandbox engine is running.", err);
                             setFirebaseError(err.message || String(err));
                             setIsLocalMode(true);
                             setIsFirebaseLoading(false);
                         });
                     } else {
-                        if (!window.firebaseInitError) {
-                            setFirebaseError("Firebase 라이브러리가 로드되지 않았거나 초기화 스크립트 실행이 취소되었습니다.");
-                        }
                         setIsLocalMode(true);
                         setIsFirebaseLoading(false);
                     }
                 };
 
-                const handleFirebaseInitEvent = () => {
-                    tryFirebaseSync();
-                };
-
+                const handleFirebaseInitEvent = () => tryFirebaseSync();
                 window.addEventListener('firebase-initialized', handleFirebaseInitEvent);
-                // 즉각 준비 확인 검증
-                if (window.firebaseMethods) {
-                    tryFirebaseSync();
-                }
+                if (window.firebaseMethods) tryFirebaseSync();
 
-                return () => {
-                    window.removeEventListener('firebase-initialized', handleFirebaseInitEvent);
-                };
+                return () => window.removeEventListener('firebase-initialized', handleFirebaseInitEvent);
             }, []);
 
             useEffect(() => {
                 if (window.MathJax && window.MathJax.typesetPromise) {
                     window.MathJax.typesetPromise().catch((err) => console.log(err));
                 }
-            }, [materials, selectedMaterial]);
+            }, [materials, selectedMaterial, activeMainTab]);
 
+            // Firestore 실시간 리스너 (자료실)
             const listenToCloudMaterials = () => {
-                const { collection, onSnapshot, doc, setDoc } = window.firebaseMethods;
+                const { collection, onSnapshot } = window.firebaseMethods;
                 const db = window.db;
                 const appId = window.appId;
-
                 const materialsRef = collection(db, 'artifacts', appId, 'public', 'data', 'materials');
+                
                 onSnapshot(materialsRef, (snapshot) => {
                     const cloudList = [];
-                    snapshot.forEach((d) => {
-                        cloudList.push({ ...d.data(), id: d.id });
-                    });
+                    snapshot.forEach((d) => { cloudList.push({ ...d.data(), id: d.id }); });
                     cloudList.sort((a, b) => b.date.localeCompare(a.date));
                     setMaterials(cloudList);
                     localStorage.setItem("dogye_archive_materials", JSON.stringify(cloudList));
-                }, (error) => {
-                    console.log("Database connection offline. Reverted to Local storage sync.");
-                    setIsLocalMode(true);
+                }, () => setIsLocalMode(true));
+            };
+
+            // Firestore 실시간 리스너 (Q&A)
+            const listenToCloudQna = () => {
+                const { collection, onSnapshot } = window.firebaseMethods;
+                const db = window.db;
+                const appId = window.appId;
+                const qnaRef = collection(db, 'artifacts', appId, 'public', 'data', 'qna');
+                
+                onSnapshot(qnaRef, (snapshot) => {
+                    const qList = [];
+                    snapshot.forEach((d) => { qList.push({ ...d.data(), id: d.id }); });
+                    qList.sort((a, b) => b.date.localeCompare(a.date));
+                    setQnaList(qList);
+                    localStorage.setItem("dogye_archive_qna", JSON.stringify(qList));
                 });
             };
 
@@ -382,14 +355,12 @@
                 const { doc, onSnapshot } = window.firebaseMethods;
                 const db = window.db;
                 const appId = window.appId;
-
                 const noticeRef = doc(db, 'artifacts', appId, 'public', 'notice');
+                
                 onSnapshot(noticeRef, (snapshot) => {
                     if (snapshot.exists()) {
-                        const data = snapshot.data();
-                        setNoticeText(data.content || "");
-                        setNoticeEditor(data.content || "");
-                        localStorage.setItem("dogye_archive_notice", data.content || "");
+                        setNoticeText(snapshot.data().content || "");
+                        setNoticeEditor(snapshot.data().content || "");
                     }
                 });
             };
@@ -399,123 +370,118 @@
                 setUsersList(localUsers);
             };
 
-            // 사용자 로그인 검증 구조
+            // 로그인 & 회원가입 로직
             const handleLogin = (e) => {
                 e.preventDefault();
-                if (!loginEmail || !loginPassword) {
-                    triggerAlert("이메일 주소와 패스워드를 올바르게 채워 넣어 주세요.", "로그인 누락");
-                    return;
-                }
-
-                // 👑 최고 관리자 계정 마스터 키 프리셋 통과
+                if (!loginEmail || !loginPassword) return triggerAlert("이메일 주소와 패스워드를 올바르게 입력해 주세요.");
+                
                 if (loginEmail === "admin@dogye.hs.kr" && loginPassword === "dogyehs2027") {
-                    const adminSession = {
-                        name: "최고관리자",
-                        email: "admin@dogye.hs.kr",
-                        grade: "관리자 소속",
-                        role: "admin",
-                        schoolUserId: "admin_master_system"
-                    };
+                    const adminSession = { name: "최고관리자", email: "admin@dogye.hs.kr", grade: "관리자 소속", role: "admin", schoolUserId: "admin_master_system" };
                     setUser(adminSession);
                     localStorage.setItem("dogye_current_user", JSON.stringify(adminSession));
                     showToast("최고 마스터 관리자 등급으로 접속에 성공했습니다!");
                     return;
                 }
 
-                // 도계고 도메인 철통 검사
-                if (!isValidSchoolEmail(loginEmail)) {
-                    triggerAlert("인가되지 않은 사용자입니다. 도계고 이메일 규격 외 접속은 허용되지 않습니다.");
-                    return;
-                }
+                if (!isValidSchoolEmail(loginEmail)) return triggerAlert("인가되지 않은 사용자입니다. 도계고 이메일 규격 외 접속은 허용되지 않습니다.");
 
                 const localUsers = JSON.parse(localStorage.getItem("dogye_archive_users") || "[]");
                 const found = localUsers.find(u => u.email === loginEmail);
 
-                if (found) {
-                    if (found.password === loginPassword) {
-                        setUser(found);
-                        localStorage.setItem("dogye_current_user", JSON.stringify(found));
-                        showToast(`반가워요, ${found.name}님!`);
-                    } else {
-                        triggerAlert("패스워드가 잘못 지정되었습니다. 다시 시도해 주세요.", "인증 불일치");
-                    }
+                if (found && found.password === loginPassword) {
+                    setUser(found);
+                    localStorage.setItem("dogye_current_user", JSON.stringify(found));
+                    showToast(`반가워요, ${found.name}님!`);
                 } else {
-                    triggerAlert("가입된 정보가 존재하지 않습니다. 신규 학생 가입을 진행해 주세요.", "이메일 미확인");
+                    triggerAlert("정보가 일치하지 않거나 가입되지 않은 이메일입니다.");
                 }
             };
 
-            // 신규 학생 정보 정식 등록
             const handleSignUp = (e) => {
                 e.preventDefault();
-                if (!signUpName || !signUpEmail || !signUpPassword || !signUpPasswordConfirm) {
-                    triggerAlert("모든 필수 기재 양식을 공백 없이 완성해 주세요.", "양식 누락");
-                    return;
-                }
-
-                if (signUpPassword !== signUpPasswordConfirm) {
-                    triggerAlert("설정하신 비밀번호와 비밀번호 확인 입력값이 다릅니다.");
-                    return;
-                }
-
-                // 도계고 도메인 소속 암묵적 검증
-                if (!isValidSchoolEmail(signUpEmail)) {
-                    triggerAlert("외부인은 이 공간에 가입할 수 없습니다.");
-                    return;
-                }
+                if (!signUpName || !signUpEmail || !signUpPassword) return triggerAlert("모든 양식을 채워주세요.");
+                if (signUpPassword !== signUpPasswordConfirm) return triggerAlert("비밀번호 확인이 다릅니다.");
+                if (!isValidSchoolEmail(signUpEmail)) return triggerAlert("도계고 학생만 가입 가능합니다 (@dogye.hs.kr).");
 
                 const localUsers = JSON.parse(localStorage.getItem("dogye_archive_users") || "[]");
-                if (localUsers.some(u => u.email === signUpEmail)) {
-                    triggerAlert("해당 이메일은 이미 아카이브에 승인 등록되어 있습니다.", "가입 중복");
-                    return;
-                }
+                if (localUsers.some(u => u.email === signUpEmail)) return triggerAlert("이미 가입된 이메일입니다.");
 
-                const resolvedRole = isAdministrator(signUpEmail) ? "admin" : "student";
-                const newUser = {
-                    name: signUpName,
-                    email: signUpEmail,
-                    password: signUpPassword,
-                    grade: signUpGrade,
-                    role: resolvedRole,
-                    schoolUserId: "student_" + Date.now()
-                };
-
+                const newUser = { name: signUpName, email: signUpEmail, password: signUpPassword, grade: signUpGrade, role: "student", schoolUserId: "student_" + Date.now() };
                 localUsers.push(newUser);
                 localStorage.setItem("dogye_archive_users", JSON.stringify(localUsers));
 
-                // 온라인 모드 클라우드 데이터 전송 동시성 보장
                 if (!isLocalMode && window.firebaseMethods) {
                     const { doc, setDoc } = window.firebaseMethods;
-                    const db = window.db;
-                    const appId = window.appId;
-                    const emailSafe = sanitizeEmailForDocId(signUpEmail);
-
-                    setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', emailSafe), newUser).catch((err) => {
-                        console.log("Cloud user profile cache delayed.");
-                    });
+                    setDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'users', sanitizeEmailForDocId(signUpEmail)), newUser).catch(() => {});
                 }
 
                 setUser(newUser);
                 localStorage.setItem("dogye_current_user", JSON.stringify(newUser));
-                showToast("도계 아카이브 회원 자격이 정식 승인되어 통과되었습니다!");
+                showToast("도계 아카이브 회원 자격이 승인되었습니다!");
             };
 
             const handleLogout = () => {
                 setUser(null);
                 localStorage.removeItem("dogye_current_user");
-                showToast("도계 아카이브 세션 연결을 해제하였습니다.");
+                showToast("로그아웃 되었습니다.");
             };
 
-            // 기출 학습 자료 영구 기부 업로드 (IndexedDB 진짜 파일 적재 연계)
+            // 🚀 핵심 1: 파일 업로드 (Firebase Storage + IndexedDB 백업)
             const handleUpload = async (e) => {
                 e.preventDefault();
                 if (!user) return;
-
                 if (!newTitle || !newFile || !newDescription) {
-                    triggerAlert("제목, 공부 팁 분석 소개, 그리고 실제 기출 기부 파일을 첨부해 주세요.", "양식 기재 오류");
+                    triggerAlert("제목, 자료 소개, 그리고 실제 파일을 모두 첨부해 주세요.");
                     return;
                 }
 
                 const newId = String(Date.now());
+                let downloadUrl = null;
+                setUploadProgress(10); // 로딩 시작
+
+                // 1. Firebase Storage 클라우드 업로드 시도
+                if (!isLocalMode && window.firebaseMethods && window.firebaseMethods.ref) {
+                    try {
+                        const { ref, uploadBytesResumable, getDownloadURL } = window.firebaseMethods;
+                        const storage = window.storage;
+                        // 한글 파일명 인코딩 문제 방지를 위해 영문/숫자 조합 아이디 덧붙임
+                        const safeFileName = `${newId}_${newFile.name}`;
+                        const fileRef = ref(storage, `materials/${safeFileName}`);
+                        
+                        const uploadTask = uploadBytesResumable(fileRef, newFile);
+                        
+                        await new Promise((resolve, reject) => {
+                            uploadTask.on('state_changed', 
+                                (snapshot) => {
+                                    const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                                    setUploadProgress(Math.max(10, Math.round(progress)));
+                                }, 
+                                (error) => reject(error), 
+                                async () => {
+                                    downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+                                    resolve();
+                                }
+                            );
+                        });
+                        setUploadProgress(100);
+                    } catch (err) {
+                        console.error("Storage upload failed, falling back to local DB:", err);
+                        triggerAlert("클라우드 서버 업로드 중 에러가 발생하여 로컬(오프라인) 모드로 전환 저장합니다.");
+                    }
+                }
+
+                // 2. 오프라인 모드이거나 Storage 실패 시 IndexedDB에 로컬 백업
+                if (!downloadUrl) {
+                    try {
+                        await saveFileToIndexedDB(newId, newFile);
+                        setUploadProgress(100);
+                    } catch (err) {
+                        triggerAlert("로컬 저장소 에러로 파일 저장을 실패했습니다.");
+                        setUploadProgress(0);
+                        return;
+                    }
+                }
+
                 const formatDoc = {
                     id: newId,
                     title: newTitle,
@@ -524,111 +490,86 @@
                     type: newType,
                     uploader: user.name,
                     uploaderEmail: user.email,
-                    fileType: newFile.name.split('.').pop() || 'pdf',
+                    fileType: newFile.name.split('.').pop() || 'file',
                     fileName: newFile.name,
                     fileSize: newFile.size, 
                     downloads: 0,
                     likes: 0,
-                    isVerified: user.role === "admin" ? true : false,
+                    isVerified: user.role === "admin",
                     description: newDescription,
                     comments: [],
-                    date: new Date().toISOString().split('T')[0]
+                    date: new Date().toISOString().split('T')[0],
+                    fileUrl: downloadUrl // 🚀 Firebase Storage 진짜 링크
                 };
 
-                try {
-                    // IndexedDB 대용량 내부 저장소에 바이너리 데이터 직접 주입
-                    await saveFileToIndexedDB(newId, newFile);
-                } catch (err) {
-                    console.error("IndexedDB write failure:", err);
-                    triggerAlert("바이너리 파일을 IndexedDB에 기재하는 중 에러가 발생했습니다.", "파일 저장 차단");
-                    return;
-                }
-
-                // 로컬 리스트 데이터 병합 갱신
                 const updatedList = [formatDoc, ...materials];
                 setMaterials(updatedList);
                 localStorage.setItem("dogye_archive_materials", JSON.stringify(updatedList));
 
-                // Firebase 클라우드로 가벼운 메타데이터 전송 (클라우드 용량 세이브 및 실시간 전송 동시 가동)
                 if (!isLocalMode && window.firebaseMethods) {
                     const { doc, setDoc } = window.firebaseMethods;
-                    const db = window.db;
-                    const appId = window.appId;
-
                     try {
-                        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'materials', newId), formatDoc);
-                    } catch (err) {
-                        console.log("Cloud sync error. Data stored safely inside local cache.");
-                    }
+                        await setDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'materials', newId), formatDoc);
+                    } catch (err) { }
                 }
 
-                showToast("실제 학습 기증 파일과 분석 자료가 데이터베이스에 등재 완료되었습니다!");
+                showToast("자료 기부가 완벽하게 등록되었습니다!");
                 setIsUploadOpen(false);
                 setNewTitle("");
                 setNewFile(null);
                 setNewDescription("");
+                setUploadProgress(0);
             };
 
             const handleLike = async (mId) => {
                 if (!user) return;
-                const updatedList = materials.map(m => {
-                    if (m.id === mId) {
-                        return { ...m, likes: (m.likes || 0) + 1 };
-                    }
-                    return m;
-                });
-
+                const updatedList = materials.map(m => m.id === mId ? { ...m, likes: (m.likes || 0) + 1 } : m);
                 setMaterials(updatedList);
-                localStorage.setItem("dogye_archive_materials", JSON.stringify(updatedList));
-
                 if (!isLocalMode && window.firebaseMethods) {
                     const { doc, updateDoc } = window.firebaseMethods;
-                    const db = window.db;
-                    const appId = window.appId;
-                    const target = materials.find(m => m.id === mId);
-
-                    try {
-                        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'materials', mId), {
-                            likes: (target.likes || 0) + 1
-                        });
-                    } catch (err) {
-                        console.log("Cloud likes synchronization delayed.");
-                    }
+                    updateDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'materials', mId), { likes: updatedList.find(m=>m.id===mId).likes }).catch(()=>{});
                 }
-                showToast("소중한 학습 기부 자료에 유용한 보탬(좋아요)을 실었습니다.");
             };
 
-            // 진짜 기부 파일 다운로드 구조 (IndexedDB 복구 연동)
-            const handleDownloadSimulate = async (mId) => {
+            // 다운로드 로직 (클라우드 URL 우선, 없으면 IndexedDB)
+            const handleDownload = async (mat) => {
                 if (!user) return;
-                const updatedList = materials.map(m => {
-                    if (m.id === mId) {
-                        return { ...m, downloads: (m.downloads || 0) + 1 };
-                    }
-                    return m;
-                });
-
+                
+                // 다운로드 수 증가
+                const updatedList = materials.map(m => m.id === mat.id ? { ...m, downloads: (m.downloads || 0) + 1 } : m);
                 setMaterials(updatedList);
-                localStorage.setItem("dogye_archive_materials", JSON.stringify(updatedList));
-
                 if (!isLocalMode && window.firebaseMethods) {
                     const { doc, updateDoc } = window.firebaseMethods;
-                    const db = window.db;
-                    const appId = window.appId;
-                    const target = materials.find(m => m.id === mId);
-
-                    try {
-                        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'materials', mId), {
-                            downloads: (target.downloads || 0) + 1
-                        });
-                    } catch (err) {
-                        console.log("Cloud downloads statistics synchronization delayed.");
-                    }
+                    updateDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'materials', mat.id), { downloads: (mat.downloads || 0) + 1 }).catch(()=>{});
                 }
 
-                // IndexedDB에서 바이너리 진짜 파일 끄집어내기 시도
+                // 1. Storage 클라우드 다운로드
+                if (mat.fileUrl) {
+                    // a 태그를 생성하여 진짜 파일을 다운로드하도록 강제
+                    fetch(mat.fileUrl)
+                        .then(response => response.blob())
+                        .then(blob => {
+                            const blobUrl = window.URL.createObjectURL(blob);
+                            const link = document.createElement('a');
+                            link.href = blobUrl;
+                            link.download = mat.fileName;
+                            document.body.appendChild(link);
+                            link.click();
+                            link.remove();
+                            window.URL.revokeObjectURL(blobUrl);
+                            showToast("클라우드에서 원본 파일을 완벽하게 다운로드했습니다!");
+                        })
+                        .catch(err => {
+                            // 브라우저 보안(CORS)으로 fetch가 막힐 경우 새 탭으로 열기 대체
+                            window.open(mat.fileUrl, '_blank');
+                            showToast("새 탭에서 원본 파일이 열립니다.");
+                        });
+                    return;
+                }
+
+                // 2. IndexedDB 로컬 다운로드
                 try {
-                    const actualFileObj = await getFileFromIndexedDB(mId);
+                    const actualFileObj = await getFileFromIndexedDB(mat.id);
                     if (actualFileObj) {
                         const blobUrl = URL.createObjectURL(actualFileObj);
                         const link = document.createElement("a");
@@ -636,227 +577,141 @@
                         link.download = actualFileObj.name;
                         document.body.appendChild(link);
                         link.click();
-                        document.body.removeChild(link);
+                        link.remove();
                         URL.revokeObjectURL(blobUrl);
-                        showToast("실제 원본 기증 파일을 브라우저로 완벽하게 다운로드했습니다!");
+                        showToast("로컬 저장소에서 원본 파일을 다운로드했습니다!");
                         return;
                     }
-                } catch (e) {
-                    console.warn("Real file storage index lookup failed. Converting to virtual placeholder text.", e);
-                }
-
-                // 가상 예시용 텍스트 가이드 복원 다운로드 포맷
-                const docTemplate = `도계고등학교 학습 아카이브 기증 문서 안내\n` + 
-                                    `========================================\n` +
-                                    `자료 제목: ${selectedMaterial.title}\n` +
-                                    `작성자: ${selectedMaterial.uploader} (${selectedMaterial.uploaderEmail})\n` +
-                                    `과목 분류: ${selectedMaterial.subject} (${selectedMaterial.type})\n` +
-                                    `작성 일자: ${selectedMaterial.date}\n\n` +
-                                    `[소개 및 핵심 팁]\n` +
-                                    `${selectedMaterial.description}\n\n` +
-                                    `* 본 파일은 초기 기본 세팅 샘플이거나 IndexedDB 유실로 인해 생성된 텍스트 대체 안내서입니다.\n` +
-                                    `* 학생들이 업로드한 신규 실제 학습 자료는 업로드하신 실제 확장자 및 온전한 파일 규격 그대로 완벽하게 다운로드됩니다.`;
-
-                const blob = new Blob([docTemplate], { type: "text/plain;charset=utf-8" });
-                const blobUrl = URL.createObjectURL(blob);
-                const link = document.createElement("a");
-                link.href = blobUrl;
-                link.download = `[기부안내서]_${selectedMaterial.fileName}.txt`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(blobUrl);
-
-                showToast("초기 예시 기부 안내 텍스트 다운로드를 진행했습니다.");
+                } catch (e) { }
+                triggerAlert("파일의 원본 데이터를 찾을 수 없습니다. (오프라인 캐시가 지워졌거나 업로드 중 유실됨)");
             };
 
-            const handleCommentSubmit = async (e) => {
+            const handleCommentSubmit = async (e, targetId, isQna = false) => {
                 e.preventDefault();
-                if (!user || !selectedMaterial || !commentInput.trim()) return;
+                if (!user || !commentInput.trim()) return;
 
-                const newComment = {
+                const newComment = { id: String(Date.now()), author: user.name, text: commentInput.trim(), date: new Date().toISOString().split('T')[0] };
+
+                if (!isQna) {
+                    const updatedList = materials.map(m => m.id === targetId ? { ...m, comments: [...(m.comments || []), newComment] } : m);
+                    setMaterials(updatedList);
+                    setSelectedMaterial(updatedList.find(m => m.id === targetId));
+                    if (!isLocalMode && window.firebaseMethods) {
+                        const { doc, updateDoc } = window.firebaseMethods;
+                        updateDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'materials', targetId), { comments: updatedList.find(m => m.id === targetId).comments }).catch(()=>{});
+                    }
+                } else {
+                    const updatedList = qnaList.map(q => q.id === targetId ? { ...q, comments: [...(q.comments || []), newComment], answers: (q.answers || 0) + 1 } : q);
+                    setQnaList(updatedList);
+                    setSelectedQna(updatedList.find(q => q.id === targetId));
+                    if (!isLocalMode && window.firebaseMethods) {
+                        const { doc, updateDoc } = window.firebaseMethods;
+                        updateDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'qna', targetId), { 
+                            comments: updatedList.find(q => q.id === targetId).comments,
+                            answers: updatedList.find(q => q.id === targetId).answers
+                        }).catch(()=>{});
+                    }
+                }
+                setCommentInput("");
+                showToast("의견을 등록했습니다.");
+            };
+
+            // Q&A 작성 등록
+            const handleQnaSubmit = async (e) => {
+                e.preventDefault();
+                if(!user || !newQnaTitle || !newQnaContent) return triggerAlert("제목과 내용을 모두 적어주세요.");
+
+                const newQna = {
                     id: String(Date.now()),
+                    title: newQnaTitle,
+                    content: newQnaContent,
+                    subject: newQnaSubject,
                     author: user.name,
                     authorEmail: user.email,
-                    text: commentInput.trim(),
-                    date: new Date().toISOString().split('T')[0]
+                    date: new Date().toISOString().split('T')[0],
+                    answers: 0,
+                    comments: []
                 };
 
-                const updatedComments = [...(selectedMaterial.comments || []), newComment];
-                const updatedList = materials.map(m => {
-                    if (m.id === selectedMaterial.id) {
-                        return { ...m, comments: updatedComments };
-                    }
-                    return m;
-                });
-
-                setMaterials(updatedList);
-                localStorage.setItem("dogye_archive_materials", JSON.stringify(updatedList));
-
-                const updatedTarget = updatedList.find(m => m.id === selectedMaterial.id);
-                if (updatedTarget) {
-                    setSelectedMaterial(updatedTarget);
-                }
-
-                if (!isLocalMode && window.firebaseMethods) {
-                    const { doc, updateDoc } = window.firebaseMethods;
-                    const db = window.db;
-                    const appId = window.appId;
-
-                    try {
-                        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'materials', selectedMaterial.id), {
-                            comments: updatedComments
-                        });
-                    } catch (err) {
-                        console.log("Cloud comment writing delayed.");
-                    }
-                }
-
-                setCommentInput("");
-                showToast("학습 피드백 및 응원의 평판 피드백 댓글을 게시했습니다.");
-            };
-
-            // 👑 최고 관리자 전용 정품 보증 마크 발급
-            const verifyMaterial = async (mId) => {
-                if (user?.role !== "admin") return;
-                const updatedList = materials.map(m => {
-                    if (m.id === mId) {
-                        return { ...m, isVerified: true };
-                    }
-                    return m;
-                });
-
-                setMaterials(updatedList);
-                localStorage.setItem("dogye_archive_materials", JSON.stringify(updatedList));
-
-                if (!isLocalMode && window.firebaseMethods) {
-                    const { doc, updateDoc } = window.firebaseMethods;
-                    const db = window.db;
-                    const appId = window.appId;
-
-                    try {
-                        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'materials', mId), {
-                            isVerified: true
-                        });
-                    } catch (e) {
-                        console.log("Cloud verification approval sync error.");
-                    }
-                }
-                showToast("해당 학생 기증 자료에 '검증 통과 최고 정품 마크'를 수여했습니다!");
-            };
-
-            // 👑 최고 관리자 전용 저작권 위반 자료 완전 원격 파색
-            const deleteMaterial = (mId) => {
-                if (user?.role !== "admin") return;
-
-                triggerConfirm(
-                    "이 기증 자료는 저작권 침해 우려 혹은 유실 문제로 영구 파기 처리될 수 있습니다. 진행하겠습니까?",
-                    async () => {
-                        const filtered = materials.filter(m => m.id !== mId);
-                        setMaterials(filtered);
-                        localStorage.setItem("dogye_archive_materials", JSON.stringify(filtered));
-                        setSelectedMaterial(null);
-
-                        if (!isLocalMode && window.firebaseMethods) {
-                            const { doc, deleteDoc } = window.firebaseMethods;
-                            const db = window.db;
-                            const appId = window.appId;
-
-                            try {
-                                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'materials', mId));
-                            } catch (e) {
-                                console.log("Cloud deletion synchronize interrupted.");
-                            }
-                        }
-                        showToast("아카이브 내 부적합 지정자료를 완전 퇴출 파색 조치했습니다.");
-                    },
-                    "경고: 자료 강제 파색"
-                );
-            };
-
-            // 👑 최고 관리자 전용 피드백 규제 관리
-            const deleteComment = (commentId) => {
-                if (user?.role !== "admin" || !selectedMaterial) return;
-
-                triggerConfirm(
-                    "스팸성, 허위 제보 또는 비난 섞인 해당 피드백 코멘트를 즉시 영구 삭제 규제하시겠습니까?",
-                    async () => {
-                        const filteredComments = (selectedMaterial.comments || []).filter(c => c.id !== commentId);
-                        const updatedList = materials.map(m => {
-                            if (m.id === selectedMaterial.id) {
-                                return { ...m, comments: filteredComments };
-                            }
-                            return m;
-                        });
-
-                        setMaterials(updatedList);
-                        localStorage.setItem("dogye_archive_materials", JSON.stringify(updatedList));
-
-                        const updatedTarget = updatedList.find(m => m.id === selectedMaterial.id);
-                        if (updatedTarget) {
-                            setSelectedMaterial(updatedTarget);
-                        }
-
-                        if (!isLocalMode && window.firebaseMethods) {
-                            const { doc, updateDoc } = window.firebaseMethods;
-                            const db = window.db;
-                            const appId = window.appId;
-
-                            try {
-                                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'materials', selectedMaterial.id), {
-                                    comments: filteredComments
-                                });
-                            } catch (e) {
-                                console.log("Cloud comment deletion synchronize failed.");
-                            }
-                        }
-                        showToast("지정 댓글 부적격 판정으로 강제 규제 제거 소멸 조치했습니다.");
-                    },
-                    "주의: 피드백 강제 규제"
-                );
-            };
-
-            // 👑 최고 관리자 중요 공지 원격 배포
-            const updateGlobalNotice = async () => {
-                if (user?.role !== "admin") return;
-
-                setNoticeText(noticeEditor);
-                localStorage.setItem("dogye_archive_notice", noticeEditor);
+                const updatedList = [newQna, ...qnaList];
+                setQnaList(updatedList);
+                localStorage.setItem("dogye_archive_qna", JSON.stringify(updatedList));
 
                 if (!isLocalMode && window.firebaseMethods) {
                     const { doc, setDoc } = window.firebaseMethods;
-                    const db = window.db;
-                    const appId = window.appId;
-
                     try {
-                        await setDoc(doc(db, 'artifacts', appId, 'public', 'notice'), {
-                            content: noticeEditor
-                        });
-                    } catch (e) {
-                        console.log("Cloud global billboard update deferred.");
-                    }
+                        await setDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'qna', newQna.id), newQna);
+                    } catch (err) { }
                 }
-                showToast("메인 헤드라인 긴급 학교 공지사항 배포를 마쳤습니다.");
+
+                showToast("질문/요청 게시글이 등록되었습니다!");
+                setIsQnaWriteOpen(false);
+                setNewQnaTitle("");
+                setNewQnaContent("");
             };
 
+            const deleteMaterial = async (mId) => {
+                if (user?.role !== "admin") return;
+                triggerConfirm("이 자료를 영구 파기하시겠습니까?", async () => {
+                    const target = materials.find(m => m.id === mId);
+                    setMaterials(materials.filter(m => m.id !== mId));
+                    setSelectedMaterial(null);
+                    
+                    if (!isLocalMode && window.firebaseMethods) {
+                        const { doc, deleteDoc, ref, deleteObject } = window.firebaseMethods;
+                        // Firestore 데이터 삭제
+                        deleteDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'materials', mId)).catch(()=>{});
+                        // Storage 파일 삭제 (URL이 있는 경우)
+                        if (target && target.fileUrl) {
+                            try {
+                                const fileRef = ref(window.storage, `materials/${mId}_${target.fileName}`);
+                                await deleteObject(fileRef);
+                            } catch(e) { console.warn("Storage deletion failed or file doesn't exist.") }
+                        }
+                    }
+                    showToast("자료가 삭제되었습니다.");
+                });
+            };
+            
+            const deleteQna = async (qId) => {
+                if (user?.role !== "admin") return;
+                triggerConfirm("이 게시글을 영구 파기하시겠습니까?", async () => {
+                    setQnaList(qnaList.filter(q => q.id !== qId));
+                    setSelectedQna(null);
+                    if (!isLocalMode && window.firebaseMethods) {
+                        const { doc, deleteDoc } = window.firebaseMethods;
+                        deleteDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'qna', qId)).catch(()=>{});
+                    }
+                    showToast("게시글이 삭제되었습니다.");
+                });
+            }
+
+            const isPdfOrImage = (filename) => {
+                if (!filename) return false;
+                const ext = filename.split('.').pop().toLowerCase();
+                return ['pdf', 'png', 'jpg', 'jpeg', 'gif'].includes(ext);
+            };
+
+            // 필터 로직
             const filteredMaterials = materials.filter(m => {
-                const matchSearch = m.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                                    m.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                                    m.uploader.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                                    m.description.toLowerCase().includes(searchQuery.toLowerCase());
-                
+                const matchSearch = m.title.toLowerCase().includes(searchQuery.toLowerCase()) || m.subject.toLowerCase().includes(searchQuery.toLowerCase()) || m.uploader.toLowerCase().includes(searchQuery.toLowerCase());
                 const matchGrade = activeGradeFilter === "전체" ? true : m.grade === activeGradeFilter;
                 const matchSubject = activeSubjectFilter === "전체" ? true : m.subject === activeSubjectFilter;
                 const matchType = activeTypeFilter === "전체" ? true : m.type === activeTypeFilter;
-
                 return matchSearch && matchGrade && matchSubject && matchType;
+            });
+            
+            const filteredQna = qnaList.filter(q => {
+                const matchSearch = q.title.toLowerCase().includes(searchQuery.toLowerCase()) || q.author.toLowerCase().includes(searchQuery.toLowerCase()) || q.content.toLowerCase().includes(searchQuery.toLowerCase());
+                const matchSubject = activeSubjectFilter === "전체" ? true : q.subject === activeSubjectFilter;
+                return matchSearch && matchSubject;
             });
 
             if (isFirebaseLoading && isLocalMode === false) {
                 return (
                     <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50">
                         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600 mb-4"></div>
-                        <p className="text-slate-600 font-medium">도계 아카이브 보안 통신 채널을 점검하는 중...</p>
+                        <p className="text-slate-600 font-medium">도계 아카이브 보안 통신 채널 연결 중...</p>
                     </div>
                 );
             }
@@ -869,139 +724,33 @@
                                 <div className="bg-blue-600 text-white p-3.5 rounded-full inline-block mb-3 shadow-md">
                                     <i className="fa-solid fa-graduation-cap text-3xl"></i>
                                 </div>
-                                <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Dogye Archive</h1>
-                                <p className="text-slate-500 text-sm mt-1">도계고등학교 학습 자료실 포털</p>
+                                <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">Dogye Archive</h1>
+                                <p className="text-slate-500 text-sm mt-1 font-semibold text-blue-600">v 3.0 클라우드 엔진</p>
                             </div>
 
                             <div className="flex bg-slate-100 p-1 rounded-xl mb-6">
-                                <button 
-                                    onClick={() => setIsLoginView(true)}
-                                    className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${isLoginView ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
-                                    인증 로그인
-                                </button>
-                                <button 
-                                    onClick={() => setIsLoginView(false)}
-                                    className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${!isLoginView ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
-                                    학생 신규 등록
-                                </button>
+                                <button onClick={() => setIsLoginView(true)} className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${isLoginView ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}>인증 로그인</button>
+                                <button onClick={() => setIsLoginView(false)} className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${!isLoginView ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}>신규 학생 등록</button>
                             </div>
 
                             {isLoginView ? (
                                 <form onSubmit={handleLogin} className="space-y-4">
-                                    <div>
-                                        <label className="block text-sm font-semibold text-slate-700 mb-1">인증용 이메일</label>
-                                        <div className="relative">
-                                            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                                                <i className="fa-solid fa-envelope"></i>
-                                            </span>
-                                            <input 
-                                                type="email" 
-                                                placeholder="이메일을 입력하세요"
-                                                value={loginEmail}
-                                                onChange={(e) => setLoginEmail(e.target.value)}
-                                                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all text-sm"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-semibold text-slate-700 mb-1">비밀번호</label>
-                                        <div className="relative">
-                                            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                                                <i className="fa-solid fa-lock"></i>
-                                            </span>
-                                            <input 
-                                                type="password" 
-                                                placeholder="비밀번호 입력"
-                                                value={loginPassword}
-                                                onChange={(e) => setLoginPassword(e.target.value)}
-                                                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all text-sm"
-                                            />
-                                        </div>
-                                    </div>
-                                    <button 
-                                        type="submit" 
-                                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all shadow-md hover:shadow-lg text-sm mt-2">
-                                        아카이브 출입
-                                    </button>
+                                    <div><input type="email" placeholder="도계고 이메일 (@dogye.hs.kr)" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm" /></div>
+                                    <div><input type="password" placeholder="비밀번호" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm" /></div>
+                                    <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl transition-all shadow-md mt-2">아카이브 출입</button>
                                 </form>
                             ) : (
                                 <form onSubmit={handleSignUp} className="space-y-4">
+                                    <div><input type="text" placeholder="이름 (실명)" value={signUpName} onChange={(e) => setSignUpName(e.target.value)} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm" /></div>
                                     <div>
-                                        <label className="block text-sm font-semibold text-slate-700 mb-1">이름</label>
-                                        <div className="relative">
-                                            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                                                <i className="fa-solid fa-user"></i>
-                                            </span>
-                                            <input 
-                                                type="text" 
-                                                placeholder="본명을 적어주세요"
-                                                value={signUpName}
-                                                onChange={(e) => setSignUpName(e.target.value)}
-                                                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all text-sm"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-semibold text-slate-700 mb-1">소속 학년</label>
-                                        <select 
-                                            value={signUpGrade}
-                                            onChange={(e) => setSignUpGrade(e.target.value)}
-                                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all text-sm">
-                                            <option value="1학년">1학년</option>
-                                            <option value="2학년">2학년</option>
-                                            <option value="3학년">3학년</option>
+                                        <select value={signUpGrade} onChange={(e) => setSignUpGrade(e.target.value)} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none text-sm">
+                                            <option value="1학년">1학년</option><option value="2학년">2학년</option><option value="3학년">3학년</option>
                                         </select>
                                     </div>
-                                    <div>
-                                        <label className="block text-sm font-semibold text-slate-700 mb-1">이메일 등록</label>
-                                        <div className="relative">
-                                            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                                                <i className="fa-solid fa-envelope"></i>
-                                            </span>
-                                            <input 
-                                                type="email" 
-                                                placeholder="이메일 입력"
-                                                value={signUpEmail}
-                                                onChange={(e) => setSignUpEmail(e.target.value)}
-                                                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all text-sm"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-semibold text-slate-700 mb-1">패스워드 설정</label>
-                                        <div className="relative">
-                                            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                                                <i className="fa-solid fa-lock"></i>
-                                            </span>
-                                            <input 
-                                                type="password" 
-                                                placeholder="비밀번호 지정 (6자리 이상)"
-                                                value={signUpPassword}
-                                                onChange={(e) => setSignUpPassword(e.target.value)}
-                                                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all text-sm"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-semibold text-slate-700 mb-1">패스워드 재확인</label>
-                                        <div className="relative">
-                                            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                                                <i className="fa-solid fa-square-check"></i>
-                                            </span>
-                                            <input 
-                                                type="password" 
-                                                placeholder="한 번 더 입력해 주세요"
-                                                value={signUpPasswordConfirm}
-                                                onChange={(e) => setSignUpPasswordConfirm(e.target.value)}
-                                                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all text-sm"
-                                            />
-                                        </div>
-                                    </div>
-                                    <button 
-                                        type="submit" 
-                                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all shadow-md hover:shadow-lg text-sm mt-2">
-                                        신규 정보 정식 가입 요청
-                                    </button>
+                                    <div><input type="email" placeholder="학교 이메일 (@dogye.hs.kr)" value={signUpEmail} onChange={(e) => setSignUpEmail(e.target.value)} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm" /></div>
+                                    <div><input type="password" placeholder="비밀번호 지정 (6자리 이상)" value={signUpPassword} onChange={(e) => setSignUpPassword(e.target.value)} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm" /></div>
+                                    <div><input type="password" placeholder="비밀번호 재확인" value={signUpPasswordConfirm} onChange={(e) => setSignUpPasswordConfirm(e.target.value)} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm" /></div>
+                                    <button type="submit" className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3.5 rounded-xl transition-all shadow-md mt-2">신규 정보 가입</button>
                                 </form>
                             )}
                         </div>
@@ -1015,77 +764,27 @@
                     <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
                         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
                             <div className="flex items-center space-x-3">
-                                <div className="bg-blue-600 text-white p-2 rounded-lg">
-                                    <i className="fa-solid fa-graduation-cap text-xl"></i>
-                                </div>
+                                <div className="bg-blue-600 text-white p-2 rounded-lg"><i className="fa-solid fa-graduation-cap text-xl"></i></div>
                                 <div>
                                     <h1 className="text-lg font-extrabold text-slate-900 tracking-tight flex items-center gap-1.5">
-                                        Dogye Archive
+                                        Dogye Archive 3.0
                                         {isLocalMode ? (
-                                            <button 
-                                                onClick={() => triggerAlert(
-                                                    `현재 오프라인 또는 PC 폴더에서 직접 열어 로컬 브라우저 보안 임시 모드로 실행 중입니다.\n\n` +
-                                                    `💡 [해결 가이드]\n` +
-                                                    `1. 이 웹사이트를 깃허브 Pages(https://) 주소로 정식 배포하시거나,\n` +
-                                                    `2. VS Code에서 Live Server(http://localhost) 기능을 사용해 실행해 보세요.\n` +
-                                                    `3. Firebase 콘솔의 Auth 탭에서 '익명 로그인'이 활성화되어 있는지 최종 확인해 보세요!\n\n` +
-                                                    `⚠️ 원인 추적 디버그 메세지:\n${firebaseError || "연결 세션 대기 중..."}`,
-                                                    "로컬 모드 실행 가이드 및 원인 분석"
-                                                )}
-                                                className="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-[9px] font-bold px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1 transition-all cursor-pointer">
-                                                🟢 로컬 테스트 모드 ❓
-                                            </button>
+                                            <span onClick={() => triggerAlert("GitHub Pages로 배포하거나 로컬 웹서버(Live Server)로 실행하시면 즉시 클라우드가 활성화됩니다.", "로컬 모드 해제 가이드")} className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-2 py-0.5 rounded-full border border-emerald-200 cursor-pointer">🟢 로컬 테스트 모드 ❓</span>
                                         ) : (
-                                            <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-2 py-0.5 rounded-full border border-blue-200 flex items-center gap-1 animate-pulse">
-                                                🌐 클라우드 실시간 동기화
-                                            </span>
+                                            <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-2 py-0.5 rounded-full border border-blue-200">🌐 클라우드 동기화 켜짐</span>
                                         )}
                                     </h1>
-                                    <p className="text-[10px] text-slate-500">도계고등학교 전용 학습자료 공유 플랫폼</p>
                                 </div>
                             </div>
                             
                             <div className="flex items-center space-x-4">
-                                <div className="hidden md:flex flex-col items-end">
-                                    <div className="flex items-center space-x-1.5">
-                                        {user.role === "admin" && (
-                                            <span className="bg-yellow-100 text-yellow-800 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border border-yellow-200">
-                                                👑 최고 관리자
-                                            </span>
-                                        )}
-                                        <span className="text-sm font-bold text-slate-800">{user.name}님</span>
-                                    </div>
-                                    <span className="text-xs text-slate-400">{user.grade}</span>
-                                </div>
-
+                                <span className="text-sm font-bold text-slate-800 hidden sm:inline-block">{user.name}님</span>
                                 {user.role === "admin" && (
-                                    <button 
-                                        onClick={() => {
-                                            loadRegisteredUsers();
-                                            setIsAdminConsoleOpen(true);
-                                        }}
-                                        className="bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold px-3 py-1.5 rounded-lg border border-purple-200 transition-all text-xs flex items-center gap-1">
-                                        <i className="fa-solid fa-user-shield"></i>
-                                        관리자 대시보드
+                                    <button onClick={() => { loadRegisteredUsers(); setIsAdminConsoleOpen(true); }} className="bg-purple-50 text-purple-700 font-bold px-3 py-1.5 rounded-lg border border-purple-200 text-xs flex items-center gap-1">
+                                        <i className="fa-solid fa-shield-halved"></i> 콘솔
                                     </button>
                                 )}
-
-                                <button 
-                                    onClick={() => {
-                                        setNewFile(null); 
-                                        setIsUploadOpen(true);
-                                    }}
-                                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-lg shadow-sm hover:shadow-md transition-all text-xs flex items-center gap-1">
-                                    <i className="fa-solid fa-circle-plus"></i>
-                                    자료 올리기
-                                </button>
-
-                                <button 
-                                    onClick={handleLogout}
-                                    className="text-slate-400 hover:text-red-500 p-2 rounded-lg transition-all"
-                                    title="인증 해제">
-                                    <i className="fa-solid fa-right-from-bracket text-lg"></i>
-                                </button>
+                                <button onClick={handleLogout} className="text-slate-400 hover:text-red-500 transition-all"><i className="fa-solid fa-right-from-bracket text-lg"></i></button>
                             </div>
                         </div>
                     </header>
@@ -1093,289 +792,269 @@
                     {/* 긴급 교내 실시간 공지 */}
                     {noticeText && (
                         <div className="bg-yellow-50 border-b border-yellow-100">
-                            <div className="max-w-7xl mx-auto py-3 px-4 sm:px-6 lg:px-8 flex items-center space-x-3 text-yellow-800 text-xs sm:text-sm">
-                                <div className="bg-yellow-200 text-yellow-900 px-2 py-0.5 rounded-md font-bold shrink-0">
-                                    공지
-                                </div>
+                            <div className="max-w-7xl mx-auto py-3 px-4 sm:px-6 lg:px-8 flex items-center space-x-3 text-yellow-800 text-sm">
+                                <div className="bg-yellow-200 text-yellow-900 px-2 py-0.5 rounded-md font-bold shrink-0">공지</div>
                                 <div className="flex-1 font-semibold">{noticeText}</div>
                             </div>
                         </div>
                     )}
 
-                    {/* 메인 대시 영역 */}
-                    <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
-                        {/* 검색 및 카테고리 필터 헤더 */}
-                        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm mb-6 space-y-4">
-                            <div className="flex flex-col md:flex-row gap-4">
-                                <div className="flex-1 relative">
-                                    <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                                        <i className="fa-solid fa-magnifying-glass"></i>
-                                    </span>
+                    <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full space-y-6">
+                        
+                        {/* 🚀 기능 5: 맞춤형 대시보드 위젯 */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            {/* 위젯 1: 대학수학능력시험 D-Day */}
+                            <div className="bg-gradient-to-br from-indigo-500 to-blue-600 rounded-2xl p-5 text-white shadow-md flex items-center justify-between">
+                                <div>
+                                    <p className="text-blue-100 text-xs font-bold mb-1">도계고 3학년 수능 카운터</p>
+                                    <h2 className="text-2xl font-extrabold tracking-tight">2027 수능 D-{calculateDday('2026-11-12')}</h2>
+                                </div>
+                                <div className="text-4xl text-white/30"><i className="fa-solid fa-clock-rotate-left"></i></div>
+                            </div>
+                            
+                            {/* 위젯 2: 학사일정 D-Day */}
+                            <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-5 text-white shadow-md flex items-center justify-between">
+                                <div>
+                                    <p className="text-teal-100 text-xs font-bold mb-1">2학기 중간고사 대비</p>
+                                    <h2 className="text-2xl font-extrabold tracking-tight">중간고사 D-{calculateDday('2026-10-05')}</h2>
+                                </div>
+                                <div className="text-4xl text-white/30"><i className="fa-solid fa-calendar-check"></i></div>
+                            </div>
+
+                            {/* 위젯 3: 오늘의 급식 메뉴 (예시 UI - 실제로는 나이스 API 연동 가능) */}
+                            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-col justify-center relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-24 h-24 bg-orange-50 rounded-bl-full -z-10"></div>
+                                <div className="flex justify-between items-start mb-2">
+                                    <p className="text-slate-500 text-xs font-bold flex items-center gap-1.5"><i className="fa-solid fa-utensils text-orange-400"></i> 오늘의 점심 급식</p>
+                                    <span className="text-[10px] bg-slate-100 text-slate-400 px-2 rounded-full">실시간</span>
+                                </div>
+                                <p className="text-sm font-bold text-slate-700 leading-snug">현미밥, 돈육김치찌개, 언양식바싹불고기, 계란말이, 깍두기, 포도</p>
+                            </div>
+                        </div>
+
+                        {/* 🚀 기능 3: 탭 메뉴 (자료실 vs Q&A) */}
+                        <div className="flex items-center space-x-6 border-b border-slate-200">
+                            <button 
+                                onClick={() => setActiveMainTab("materials")}
+                                className={`pb-3 text-sm font-bold transition-all border-b-2 ${activeMainTab === 'materials' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+                                <i className="fa-solid fa-folder-open mr-1.5"></i>학습 자료실
+                            </button>
+                            <button 
+                                onClick={() => setActiveMainTab("qna")}
+                                className={`pb-3 text-sm font-bold transition-all border-b-2 ${activeMainTab === 'qna' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+                                <i className="fa-solid fa-circle-question mr-1.5"></i>질문 / 자료요청
+                            </button>
+                        </div>
+
+                        {/* 검색 및 필터 패널 */}
+                        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                            <div className="flex flex-col sm:flex-row gap-3 justify-between items-center">
+                                <div className="w-full relative">
+                                    <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400"><i className="fa-solid fa-magnifying-glass"></i></span>
                                     <input 
                                         type="text" 
-                                        placeholder="과목, 단원, 혹은 작성자 이름을 적고 기출 분석 자료를 검색해 보세요."
+                                        placeholder={activeMainTab === 'materials' ? "과목, 작성자 이름으로 자료 검색" : "궁금한 질문이나 요청 내용 검색"}
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all text-sm"
+                                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm"
                                     />
                                 </div>
+                                <button 
+                                    onClick={() => activeMainTab === 'materials' ? setIsUploadOpen(true) : setIsQnaWriteOpen(true)}
+                                    className="w-full sm:w-auto shrink-0 bg-slate-800 hover:bg-slate-900 text-white font-bold px-5 py-2.5 rounded-xl shadow-sm transition-all text-sm flex items-center justify-center gap-1.5">
+                                    <i className={`fa-solid ${activeMainTab === 'materials' ? 'fa-upload' : 'fa-pen'}`}></i>
+                                    {activeMainTab === 'materials' ? '새 자료 기부' : '질문 작성하기'}
+                                </button>
                             </div>
 
                             <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-4">
+                                {activeMainTab === 'materials' && (
+                                    <div className="flex items-center space-x-1.5">
+                                        <span className="text-xs font-bold text-slate-400 mr-1">학년:</span>
+                                        {["전체", "1학년", "2학년", "3학년"].map(g => (
+                                            <button key={g} onClick={() => setActiveGradeFilter(g)} className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${activeGradeFilter === g ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{g}</button>
+                                        ))}
+                                        <div className="h-4 w-[1px] bg-slate-200 hidden sm:block mx-2"></div>
+                                    </div>
+                                )}
+                                
                                 <div className="flex items-center space-x-1.5">
-                                    <span className="text-xs font-bold text-slate-400 mr-1">대상학년:</span>
-                                    {["전체", "1학년", "2학년", "3학년"].map(g => (
-                                        <button 
-                                            key={g}
-                                            onClick={() => setActiveGradeFilter(g)}
-                                            className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${activeGradeFilter === g ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                                            {g}
-                                        </button>
-                                    ))}
-                                </div>
-
-                                <div className="h-4 w-[1px] bg-slate-200 hidden sm:block mx-2"></div>
-
-                                <div className="flex items-center space-x-1.5">
-                                    <span className="text-xs font-bold text-slate-400 mr-1">과목분류:</span>
-                                    {["전체", "물리학 I", "영어", "통합과학", "수학", "화학 I", "지구과학 I", "생명과학 I"].map(s => (
-                                        <button 
-                                            key={s}
-                                            onClick={() => setActiveSubjectFilter(s)}
-                                            className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${activeSubjectFilter === s ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                                            {s}
-                                        </button>
-                                    ))}
-                                </div>
-
-                                <div className="h-4 w-[1px] bg-slate-200 hidden sm:block mx-2"></div>
-
-                                <div className="flex items-center space-x-1.5">
-                                    <span className="text-xs font-bold text-slate-400 mr-1">자료유형:</span>
-                                    {["전체", "기출 분석", "요약 노트", "수행평가 대비"].map(t => (
-                                        <button 
-                                            key={t}
-                                            onClick={() => setActiveTypeFilter(t)}
-                                            className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${activeTypeFilter === t ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                                            {t}
-                                        </button>
+                                    <span className="text-xs font-bold text-slate-400 mr-1">과목:</span>
+                                    {["전체", "국어", "영어", "수학", "통합과학", "물리학 I", "화학 I"].map(s => (
+                                        <button key={s} onClick={() => setActiveSubjectFilter(s)} className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${activeSubjectFilter === s ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{s}</button>
                                     ))}
                                 </div>
                             </div>
                         </div>
 
-                        {/* 리스트 그리드 */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {filteredMaterials.map(mat => (
-                                <div 
-                                    key={mat.id}
-                                    className="bg-white rounded-2xl border border-slate-200 hover:border-blue-400 hover:shadow-md transition-all duration-300 flex flex-col justify-between overflow-hidden group">
-                                    
-                                    <div className="p-6">
-                                        <div className="flex items-center justify-between mb-4">
-                                            <div className="flex items-center space-x-1.5">
-                                                <span className="bg-blue-50 text-blue-600 text-[10px] font-bold px-2 py-0.5 rounded">
-                                                    {mat.grade}
-                                                </span>
-                                                <span className="bg-slate-100 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded">
-                                                    {mat.subject}
-                                                </span>
+                        {/* 리스트 렌더링 영역 */}
+                        {activeMainTab === 'materials' ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                                {filteredMaterials.map(mat => (
+                                    <div key={mat.id} className="bg-white rounded-2xl border border-slate-200 hover:border-blue-400 hover:shadow-md transition-all flex flex-col justify-between overflow-hidden cursor-pointer" onClick={() => { setSelectedMaterial(mat); setIsPreviewMode(false); }}>
+                                        <div className="p-5">
+                                            <div className="flex justify-between items-center mb-3">
+                                                <div className="flex gap-1.5">
+                                                    <span className="bg-blue-50 text-blue-600 text-[10px] font-bold px-2 py-0.5 rounded">{mat.grade}</span>
+                                                    <span className="bg-slate-100 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded">{mat.subject}</span>
+                                                </div>
+                                                {mat.fileUrl && <i className="fa-solid fa-cloud text-blue-400 text-xs" title="클라우드 파일"></i>}
                                             </div>
-                                            
-                                            <div className="flex items-center gap-1.5">
-                                                {mat.isVerified ? (
-                                                    <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1" title="관리자 기증 검증 완료">
-                                                        <i className="fa-solid fa-circle-check text-[8px]"></i> 검증 완료
-                                                    </span>
-                                                ) : (
-                                                    <span className="bg-slate-100 text-slate-400 text-[10px] px-2 py-0.5 rounded-full">
-                                                        검토 중
-                                                    </span>
-                                                )}
-                                                
-                                                {user?.role === "admin" && !mat.isVerified && (
-                                                    <button 
-                                                        onClick={() => verifyMaterial(mat.id)}
-                                                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-blue-200 transition-all">
-                                                        승인
-                                                    </button>
-                                                )}
+                                            <h3 className="text-sm font-bold text-slate-800 line-clamp-2 mb-2 leading-snug">{mat.title}</h3>
+                                            <p className="text-xs text-slate-500 line-clamp-2">{mat.description}</p>
+                                        </div>
+                                        <div className="bg-slate-50 px-5 py-3 border-t border-slate-100 flex justify-between text-xs text-slate-400 font-medium">
+                                            <span>{mat.uploader}</span>
+                                            <div className="flex gap-3">
+                                                <span className="text-red-400"><i className="fa-solid fa-heart mr-1"></i>{mat.likes}</span>
+                                                <span className="text-blue-500"><i className="fa-solid fa-download mr-1"></i>{mat.downloads}</span>
                                             </div>
                                         </div>
-
-                                        <h3 
-                                            onClick={() => setSelectedMaterial(mat)}
-                                            className="text-base font-bold text-slate-800 leading-snug group-hover:text-blue-600 transition-all cursor-pointer mb-2 line-clamp-2">
-                                            {mat.title}
-                                        </h3>
-
-                                        <p className="text-xs text-slate-500 line-clamp-2 mb-4">
-                                            {mat.description}
-                                        </p>
                                     </div>
-
-                                    <div className="bg-slate-50 px-6 py-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
-                                        <div className="flex items-center space-x-1">
-                                            <span className="font-semibold text-slate-600">{mat.uploader}</span>
-                                            <span className="text-[9px] text-slate-300">|</span>
-                                            <span>{mat.date}</span>
-                                        </div>
-                                        
-                                        <div className="flex items-center space-x-3">
-                                            <button 
-                                                onClick={() => handleLike(mat.id)}
-                                                className="hover:text-red-500 flex items-center space-x-1 font-semibold transition-all">
-                                                <i className="fa-solid fa-heart text-red-400"></i>
-                                                <span>{mat.likes}</span>
-                                            </button>
-                                            <span className="flex items-center space-x-1">
-                                                <i className="fa-solid fa-cloud-arrow-down"></i>
-                                                <span>{mat.downloads}</span>
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-
-                            {filteredMaterials.length === 0 && (
-                                <div className="col-span-full py-16 text-center">
-                                    <div className="text-slate-300 text-5xl mb-4">
-                                        <i className="fa-solid fa-folder-open"></i>
-                                    </div>
-                                    <p className="text-slate-500 font-medium">검색 기준에 부합하는 자료가 없습니다.</p>
-                                    <p className="text-slate-400 text-xs mt-1">도계고 친구들을 위해 새로운 유용한 공부 비결을 제일 먼저 기부해 보세요!</p>
-                                </div>
-                            )}
-                        </div>
+                                ))}
+                                {filteredMaterials.length === 0 && <div className="col-span-full py-16 text-center text-slate-400">자료가 없습니다. 첫 기부자가 되어주세요!</div>}
+                            </div>
+                        ) : (
+                            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+                                <ul className="divide-y divide-slate-100">
+                                    {filteredQna.map(qna => (
+                                        <li key={qna.id} className="p-5 hover:bg-slate-50 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4" onClick={() => setSelectedQna(qna)}>
+                                            <div className="flex-1">
+                                                <div className="flex gap-1.5 mb-1.5">
+                                                    <span className="bg-purple-100 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded">{qna.subject}</span>
+                                                    {qna.answers > 0 && <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded">답변완료</span>}
+                                                </div>
+                                                <h3 className="text-sm font-bold text-slate-800">{qna.title}</h3>
+                                                <p className="text-xs text-slate-500 mt-1 line-clamp-1">{qna.content}</p>
+                                            </div>
+                                            <div className="text-xs text-slate-400 shrink-0 text-left sm:text-right flex sm:flex-col gap-2 sm:gap-1">
+                                                <span>{qna.author}</span>
+                                                <span><i className="fa-regular fa-comment mr-1"></i>답변 {qna.answers || 0}</span>
+                                                <span className="text-[10px]">{qna.date}</span>
+                                            </div>
+                                        </li>
+                                    ))}
+                                    {filteredQna.length === 0 && <div className="py-16 text-center text-slate-400">등록된 질문이 없습니다. 궁금한 점을 남겨보세요!</div>}
+                                </ul>
+                            </div>
+                        )}
                     </main>
 
-                    {/* 푸터 */}
-                    <footer className="bg-slate-900 text-slate-400 py-8 border-t border-slate-800 mt-12">
-                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-xs space-y-2">
-                            <p className="font-semibold text-slate-300">Dogye Archive © 2026</p>
-                            <p>도계고등학교 소속 구성원 전용 보완 학습 공유 자료창고</p>
-                            <p className="text-[10px] text-slate-500">본 사이트는 오프라인 영구 적재 및 클라우드 실시간 동시 가용 하이브리드 엔진이 탑재되었습니다.</p>
-                        </div>
-                    </footer>
-
-                    {/* 자료 상세 뷰어 모달 */}
+                    {/* 자료실 상세 모달 (미리보기 포함) */}
                     {selectedMaterial && (
+                        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                            <div className="bg-white rounded-3xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden border border-slate-200 flex flex-col">
+                                <div className="p-5 border-b border-slate-100 flex items-start justify-between bg-slate-50">
+                                    <h2 className="text-lg font-extrabold text-slate-800 pr-4">{selectedMaterial.title}</h2>
+                                    <button onClick={() => setSelectedMaterial(null)} className="text-slate-400 hover:text-slate-600"><i className="fa-solid fa-xmark text-xl"></i></button>
+                                </div>
+
+                                <div className="p-6 overflow-y-auto space-y-6 flex-1">
+                                    {/* 🚀 기능 4: 미리보기 모드 렌더링 */}
+                                    {isPreviewMode && selectedMaterial.fileUrl ? (
+                                        <div className="bg-slate-900 rounded-xl overflow-hidden shadow-inner h-[60vh] relative">
+                                            <div className="absolute top-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded">미리보기 모드</div>
+                                            {isPdfOrImage(selectedMaterial.fileName) ? (
+                                                <iframe src={selectedMaterial.fileUrl} className="w-full h-full border-0 bg-white" title="Preview"></iframe>
+                                            ) : (
+                                                <div className="w-full h-full flex flex-col items-center justify-center text-slate-400">
+                                                    <i className="fa-solid fa-file-circle-exclamation text-4xl mb-3"></i>
+                                                    <p>미리보기를 지원하지 않는 파일 형식입니다. (PDF 및 이미지만 가능)</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div>
+                                                <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">분석 및 설명</h4>
+                                                <p className="text-sm text-slate-700 bg-slate-50 p-4 rounded-xl border border-slate-100 whitespace-pre-wrap">{selectedMaterial.description}</p>
+                                            </div>
+                                            <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+                                                <div className="flex items-center space-x-3 w-full sm:w-auto overflow-hidden">
+                                                    <div className="bg-blue-600 text-white p-3 rounded-xl shrink-0"><i className="fa-solid fa-file-invoice text-xl"></i></div>
+                                                    <div className="truncate">
+                                                        <p className="text-sm font-bold text-slate-700 truncate">{selectedMaterial.fileName}</p>
+                                                        {selectedMaterial.fileSize && <p className="text-[10px] text-slate-500">{(selectedMaterial.fileSize/(1024*1024)).toFixed(2)} MB</p>}
+                                                    </div>
+                                                </div>
+                                                <div className="flex gap-2 w-full sm:w-auto">
+                                                    {/* 미리보기 버튼 (Storage URL이 있고 지원 확장자일 때만) */}
+                                                    {selectedMaterial.fileUrl && isPdfOrImage(selectedMaterial.fileName) && (
+                                                        <button onClick={() => setIsPreviewMode(true)} className="flex-1 sm:flex-none bg-white text-blue-600 border border-blue-200 font-bold px-4 py-2.5 rounded-xl transition-all shadow-sm text-xs text-center">
+                                                            <i className="fa-solid fa-eye mr-1"></i>미리보기
+                                                        </button>
+                                                    )}
+                                                    <button onClick={() => handleDownload(selectedMaterial)} className="flex-1 sm:flex-none bg-blue-600 text-white font-bold px-5 py-2.5 rounded-xl shadow-md text-xs whitespace-nowrap">
+                                                        <i className="fa-solid fa-download mr-1"></i>다운로드
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </>
+                                    )}
+
+                                    {isPreviewMode && (
+                                        <button onClick={() => setIsPreviewMode(false)} className="w-full text-center text-sm font-bold text-slate-500 hover:text-slate-800 mb-4">
+                                            <i className="fa-solid fa-arrow-left mr-1"></i>상세정보로 돌아가기
+                                        </button>
+                                    )}
+
+                                    {!isPreviewMode && (
+                                        <div className="space-y-4">
+                                            <div className="flex justify-between text-xs text-slate-400 border-b border-slate-100 pb-2">
+                                                <span>작성자: {selectedMaterial.uploader}</span>
+                                                {user?.role === "admin" && <button onClick={() => deleteMaterial(selectedMaterial.id)} className="text-red-500 font-bold"><i className="fa-solid fa-trash mr-1"></i>삭제</button>}
+                                            </div>
+                                            <h4 className="text-xs font-bold text-slate-500">댓글 피드백</h4>
+                                            <div className="space-y-3 max-h-40 overflow-y-auto">
+                                                {(selectedMaterial.comments || []).map(c => (
+                                                    <div key={c.id} className="bg-slate-50 p-3 rounded-lg text-xs"><span className="font-bold mr-2">{c.author}</span><span className="text-slate-600">{c.text}</span></div>
+                                                ))}
+                                            </div>
+                                            <form onSubmit={(e) => handleCommentSubmit(e, selectedMaterial.id, false)} className="flex gap-2">
+                                                <input type="text" placeholder="댓글 달기..." value={commentInput} onChange={(e)=>setCommentInput(e.target.value)} className="flex-1 px-3 py-2 bg-slate-50 border rounded-lg text-xs" />
+                                                <button type="submit" className="bg-slate-800 text-white px-3 rounded-lg text-xs font-bold">등록</button>
+                                            </form>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Q&A 상세 모달 */}
+                    {selectedQna && (
                         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                             <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden border border-slate-200 flex flex-col">
                                 <div className="p-6 border-b border-slate-100 flex items-start justify-between bg-slate-50">
                                     <div>
-                                        <div className="flex items-center gap-1.5 mb-2">
-                                            <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded">
-                                                {selectedMaterial.grade}
-                                            </span>
-                                            <span className="bg-slate-200 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded">
-                                                {selectedMaterial.subject}
-                                            </span>
-                                            <span className="bg-slate-200 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded">
-                                                {selectedMaterial.type}
-                                            </span>
-                                        </div>
-                                        <h2 className="text-lg font-extrabold text-slate-800 tracking-tight leading-snug">
-                                            {selectedMaterial.title}
-                                        </h2>
+                                        <span className="bg-purple-100 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded mb-2 inline-block">{selectedQna.subject}</span>
+                                        <h2 className="text-lg font-extrabold text-slate-800 leading-snug">{selectedQna.title}</h2>
+                                        <p className="text-xs text-slate-400 mt-1">작성자: {selectedQna.author} | {selectedQna.date}</p>
                                     </div>
-                                    <button 
-                                        onClick={() => setSelectedMaterial(null)}
-                                        className="text-slate-400 hover:text-slate-600 p-1">
-                                        <i className="fa-solid fa-xmark text-xl"></i>
-                                    </button>
+                                    <button onClick={() => setSelectedQna(null)} className="text-slate-400 hover:text-slate-600"><i className="fa-solid fa-xmark text-xl"></i></button>
                                 </div>
-
                                 <div className="p-6 overflow-y-auto space-y-6 flex-1">
-                                    <div>
-                                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">과목 요약 및 오답률 극복 팁</h4>
-                                        <p className="text-sm text-slate-700 bg-slate-50 p-4 rounded-2xl border border-slate-100 leading-relaxed whitespace-pre-wrap">
-                                            {selectedMaterial.description}
-                                        </p>
+                                    <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed min-h-[100px]">
+                                        {selectedQna.content}
                                     </div>
-
-                                    <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 flex flex-col sm:flex-row items-center justify-between gap-4">
-                                        <div className="flex items-center space-x-3">
-                                            <div className="bg-blue-600 text-white p-3 rounded-xl shadow-sm">
-                                                <i className="fa-solid fa-file-invoice text-xl"></i>
-                                            </div>
-                                            <div className="text-left">
-                                                <p className="text-xs text-slate-400 font-medium">실제 기부 파일명</p>
-                                                <p className="text-sm font-bold text-slate-700 break-all">{selectedMaterial.fileName}</p>
-                                                {selectedMaterial.fileSize && (
-                                                    <p className="text-[10px] text-slate-400 font-semibold">
-                                                        파일 용량: {(selectedMaterial.fileSize / (1024 * 1024)).toFixed(2)} MB
-                                                    </p>
-                                                )}
-                                            </div>
+                                    
+                                    <div className="space-y-4 pt-4 border-t border-slate-100">
+                                        <div className="flex justify-between items-center">
+                                            <h4 className="text-xs font-bold text-slate-500">답변 및 댓글 ({selectedQna.answers || 0})</h4>
+                                            {user?.role === "admin" && <button onClick={() => deleteQna(selectedQna.id)} className="text-red-500 text-xs font-bold"><i className="fa-solid fa-trash mr-1"></i>게시글 삭제</button>}
                                         </div>
-                                        <button 
-                                            onClick={() => handleDownloadSimulate(selectedMaterial.id)}
-                                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-2.5 rounded-xl transition-all shadow-md hover:shadow-lg text-xs w-full sm:w-auto shrink-0 flex items-center justify-center gap-1.5">
-                                            <i className="fa-solid fa-download"></i>
-                                            원본 파일 다운로드
-                                        </button>
-                                    </div>
-
-                                    <div className="flex items-center justify-between text-xs text-slate-400 border-b border-slate-100 pb-4">
-                                        <div className="flex items-center space-x-2">
-                                            <span>작성자: <b className="text-slate-600">{selectedMaterial.uploader}</b></span>
-                                            <span>•</span>
-                                            <span>등록일자: {selectedMaterial.date}</span>
-                                        </div>
-                                        {user?.role === "admin" && (
-                                            <button 
-                                                onClick={() => deleteMaterial(selectedMaterial.id)}
-                                                className="text-red-500 hover:text-red-700 font-bold flex items-center gap-1">
-                                                <i className="fa-solid fa-trash-can"></i>
-                                                강제 파기퇴출
-                                            </button>
-                                        )}
-                                    </div>
-
-                                    {/* 피드백 에어리어 */}
-                                    <div className="space-y-4">
-                                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">교내 학술 의견 및 보정 제안 ({selectedMaterial.comments?.length || 0})</h4>
-                                        
-                                        <div className="space-y-3 max-h-[250px] overflow-y-auto pr-1">
-                                            {(selectedMaterial.comments || []).map(comment => (
-                                                <div key={comment.id} className="bg-slate-50 p-3 rounded-xl border border-slate-100 relative">
-                                                    <div className="flex items-center justify-between mb-1">
-                                                        <div className="flex items-center space-x-1.5">
-                                                            <span className="text-xs font-bold text-slate-700">{comment.author}</span>
-                                                            <span className="text-[9px] text-slate-300">|</span>
-                                                            <span className="text-[10px] text-slate-400">{comment.date}</span>
-                                                        </div>
-                                                        {user?.role === "admin" && (
-                                                            <button 
-                                                                onClick={() => deleteComment(comment.id)}
-                                                                className="text-red-400 hover:text-red-600 text-[10px] font-bold"
-                                                                title="코멘트 규제">
-                                                                강제 규제제거
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                    <p className="text-xs text-slate-600 leading-relaxed">{comment.text}</p>
+                                        <div className="space-y-3 max-h-60 overflow-y-auto">
+                                            {(selectedQna.comments || []).map(c => (
+                                                <div key={c.id} className="bg-emerald-50 p-3 rounded-lg text-xs border border-emerald-100">
+                                                    <div className="font-bold text-emerald-800 mb-1">{c.author} <span className="text-slate-400 font-normal text-[10px] ml-2">{c.date}</span></div>
+                                                    <div className="text-slate-700">{c.text}</div>
                                                 </div>
                                             ))}
-                                            {(selectedMaterial.comments || []).length === 0 && (
-                                                <p className="text-xs text-slate-400 text-center py-4">등록된 보정 피드백이 없습니다. 첫 의견을 자유롭게 나눠보세요!</p>
-                                            )}
+                                            {(selectedQna.comments || []).length === 0 && <p className="text-xs text-slate-400 text-center py-4">아직 답변이 없습니다. 아는 내용이라면 답변을 달아주세요!</p>}
                                         </div>
-
-                                        <form onSubmit={handleCommentSubmit} className="flex gap-2">
-                                            <input 
-                                                type="text" 
-                                                placeholder="오타 수정 지적 혹은 따뜻한 응원의 공부 격려 한마디를 적어보세요."
-                                                value={commentInput}
-                                                onChange={(e) => setCommentInput(e.target.value)}
-                                                className="flex-1 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all text-xs"
-                                            />
-                                            <button 
-                                                type="submit" 
-                                                className="bg-slate-800 hover:bg-slate-900 text-white font-bold px-4 py-2 rounded-xl transition-all text-xs shrink-0">
-                                                입력
-                                            </button>
+                                        <form onSubmit={(e) => handleCommentSubmit(e, selectedQna.id, true)} className="flex gap-2">
+                                            <input type="text" placeholder="도움이 되는 답변을 남겨주세요." value={commentInput} onChange={(e)=>setCommentInput(e.target.value)} className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-xl focus:ring-1 focus:ring-blue-500 text-xs" />
+                                            <button type="submit" className="bg-emerald-600 text-white px-4 rounded-xl text-xs font-bold shadow-sm">답변하기</button>
                                         </form>
                                     </div>
                                 </div>
@@ -1383,278 +1062,78 @@
                         </div>
                     )}
 
-                    {/* 자료 정식 기증 등록 폼 */}
-                    {isUploadOpen && (
+                    {/* Q&A 작성 모달 */}
+                    {isQnaWriteOpen && (
                         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                             <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200">
-                                <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-                                    <h2 className="text-base font-bold text-slate-800 flex items-center gap-1.5">
-                                        <i className="fa-solid fa-file-arrow-up text-blue-600"></i>
-                                        기출 및 학습 비결 기부
-                                    </h2>
-                                    <button 
-                                        onClick={() => setIsUploadOpen(false)}
-                                        className="text-slate-400 hover:text-slate-600">
-                                        <i className="fa-solid fa-xmark text-lg"></i>
-                                    </button>
+                                <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                                    <h2 className="text-base font-bold text-slate-800"><i className="fa-solid fa-pen text-purple-600 mr-2"></i>질문 / 자료 요청 작성</h2>
+                                    <button onClick={() => setIsQnaWriteOpen(false)} className="text-slate-400 hover:text-slate-600"><i className="fa-solid fa-xmark text-lg"></i></button>
                                 </div>
-
-                                <form onSubmit={handleUpload} className="p-6 space-y-4">
+                                <form onSubmit={handleQnaSubmit} className="p-6 space-y-4">
+                                    <div><input type="text" placeholder="제목을 적어주세요 (예: 2학기 문학 기출 구합니다!)" value={newQnaTitle} onChange={(e)=>setNewQnaTitle(e.target.value)} className="w-full px-3 py-2 border rounded-xl text-sm focus:ring-1 focus:ring-blue-500" /></div>
                                     <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">교과명 및 아카이브 제목</label>
-                                        <input 
-                                            type="text" 
-                                            placeholder="예) 3학년 1학기 지필평가 영어 독해 수행 단어 단권화 요약"
-                                            value={newTitle}
-                                            onChange={(e) => setNewTitle(e.target.value)}
-                                            className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all text-xs"
-                                        />
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">학년 선택</label>
-                                            <select 
-                                                value={newGrade}
-                                                onChange={(e) => setNewGrade(e.target.value)}
-                                                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none text-xs">
-                                                <option value="1학년">1학년</option>
-                                                <option value="2학년">2학년</option>
-                                                <option value="3학년">3학년</option>
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">소속 과목</label>
-                                            <select 
-                                                value={newSubject}
-                                                onChange={(e) => setNewSubject(e.target.value)}
-                                                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none text-xs">
-                                                <option value="물리학 I">물리학 I</option>
-                                                <option value="영어">영어</option>
-                                                <option value="통합과학">통합과학</option>
-                                                <option value="수학">수학</option>
-                                                <option value="화학 I">화학 I</option>
-                                                <option value="지구과학 I">지구과학 I</option>
-                                                <option value="생명과학 I">생명과학 I</option>
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">자료 분류</label>
-                                        <select 
-                                            value={newType}
-                                            onChange={(e) => setNewType(e.target.value)}
-                                            className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none text-xs">
-                                            <option value="요약 노트">요약 노트</option>
-                                            <option value="기출 분석">기출 분석</option>
-                                            <option value="수행평가 대비">수행평가 대비</option>
+                                        <select value={newQnaSubject} onChange={(e)=>setNewQnaSubject(e.target.value)} className="w-full px-3 py-2 border rounded-xl text-sm focus:outline-none bg-white">
+                                            <option value="국어">국어</option><option value="수학">수학</option><option value="영어">영어</option><option value="과학">과학</option><option value="기타">기타 요청</option>
                                         </select>
                                     </div>
-
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">진짜 파일 영구 기부</label>
-                                        <div className="border-2 border-dashed border-slate-300 rounded-2xl p-6 text-center bg-slate-50 hover:bg-slate-100/50 hover:border-blue-400 transition-all cursor-pointer relative">
-                                            <input 
-                                                type="file" 
-                                                onChange={(e) => {
-                                                    if (e.target.files && e.target.files[0]) {
-                                                        setNewFile(e.target.files[0]);
-                                                    }
-                                                }}
-                                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                            />
-                                            {newFile ? (
-                                                <div className="space-y-2">
-                                                    <div className="bg-emerald-100 text-emerald-600 w-10 h-10 rounded-full flex items-center justify-center mx-auto shadow-sm">
-                                                        <i className="fa-solid fa-file-circle-check text-xl"></i>
-                                                    </div>
-                                                    <div>
-                                                        <p className="text-xs font-bold text-slate-700 truncate max-w-[280px] mx-auto">{newFile.name}</p>
-                                                        <p className="text-[10px] text-slate-400">규격: {(newFile.size / (1024 * 1024)).toFixed(2)} MB</p>
-                                                    </div>
-                                                    <span className="inline-block bg-emerald-50 text-emerald-700 text-[9px] font-bold px-2 py-0.5 rounded-full border border-emerald-100">
-                                                        IndexedDB 임시 적재 완료
-                                                    </span>
-                                                </div>
-                                            ) : (
-                                                <div className="space-y-2">
-                                                    <div className="text-slate-400 text-3xl">
-                                                        <i className="fa-solid fa-file-shield"></i>
-                                                    </div>
-                                                    <div>
-                                                        <p className="text-xs font-bold text-slate-600">이곳을 터치하거나 기부할 파일을 올려놓으세요</p>
-                                                        <p className="text-[10px] text-slate-400">PDF, HWP, DOCX, ZIP 등 업로드 가능 (대용량 지원)</p>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">기증 자료 핵심 문항 분석 및 가이드</label>
-                                        <textarea 
-                                            placeholder="오답률이 가장 높았던 공식이나 교과 지침서 상의 유의사항을 구체적으로 풀어 써 주세요."
-                                            value={newDescription}
-                                            onChange={(e) => setNewDescription(e.target.value)}
-                                            rows="3"
-                                            className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all text-xs resize-none"
-                                        ></textarea>
-                                    </div>
-
-                                    <button 
-                                        type="submit"
-                                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-md hover:shadow-lg transition-all text-xs">
-                                        도계 아카이브 등재 신청
-                                    </button>
+                                    <div><textarea placeholder="궁금한 문제나 필요한 자료를 상세히 적어주세요." value={newQnaContent} onChange={(e)=>setNewQnaContent(e.target.value)} rows="5" className="w-full px-3 py-2 border rounded-xl text-sm resize-none focus:ring-1 focus:ring-blue-500"></textarea></div>
+                                    <button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-xl shadow text-sm">게시글 등록하기</button>
                                 </form>
                             </div>
                         </div>
                     )}
 
-                    {/* 최고 마스터 전용 대시보드 */}
-                    {isAdminConsoleOpen && (
+                    {/* 자료 기부 모달 (수정됨: 업로드 프로그레스 바 추가) */}
+                    {isUploadOpen && (
                         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                            <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-hidden border border-slate-200 flex flex-col">
-                                <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-purple-50">
-                                    <h2 className="text-base font-bold text-purple-800 flex items-center gap-1.5">
-                                        <i className="fa-solid fa-user-shield"></i>
-                                        👑 Dogye Archive 전교 실시간 관리 콘솔
-                                    </h2>
-                                    <button 
-                                        onClick={() => setIsAdminConsoleOpen(false)}
-                                        className="text-purple-400 hover:text-purple-600">
-                                        <i className="fa-solid fa-xmark text-lg"></i>
-                                    </button>
+                            <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200">
+                                <div className="p-5 border-b border-slate-100 flex justify-between bg-slate-50">
+                                    <h2 className="text-base font-bold"><i className="fa-solid fa-file-arrow-up text-blue-600 mr-2"></i>자료 기부하기</h2>
+                                    <button onClick={() => { setIsUploadOpen(false); setUploadProgress(0); }} className="text-slate-400 hover:text-slate-600"><i className="fa-solid fa-xmark"></i></button>
                                 </div>
-
-                                <div className="p-6 overflow-y-auto space-y-6 flex-1">
-                                    {/* 긴급 배너 송출기 */}
-                                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
-                                        <h3 className="text-xs font-extrabold text-slate-700 flex items-center gap-1.5">
-                                            <i className="fa-solid fa-bullhorn text-blue-600"></i>
-                                            글로벌 헤드라인 공지사항 편집 배포
-                                        </h3>
-                                        <div className="flex gap-2">
-                                            <input 
-                                                type="text" 
-                                                placeholder="도계고 전교생에 실시간으로 전파할 내용을 적어 보세요."
-                                                value={noticeEditor}
-                                                onChange={(e) => setNoticeEditor(e.target.value)}
-                                                className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-xl focus:ring-1 focus:ring-blue-500 focus:outline-none text-xs"
-                                            />
-                                            <button 
-                                                onClick={updateGlobalNotice}
-                                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl text-xs shrink-0 transition-all">
-                                                즉각 송출
-                                            </button>
-                                        </div>
+                                <form onSubmit={handleUpload} className="p-6 space-y-4">
+                                    <input type="text" placeholder="자료 제목" value={newTitle} onChange={(e)=>setNewTitle(e.target.value)} className="w-full px-3 py-2 border rounded-xl text-xs" />
+                                    <div className="flex gap-2">
+                                        <select value={newGrade} onChange={(e)=>setNewGrade(e.target.value)} className="flex-1 px-3 py-2 border rounded-xl text-xs"><option value="1학년">1학년</option><option value="2학년">2학년</option><option value="3학년">3학년</option></select>
+                                        <select value={newSubject} onChange={(e)=>setNewSubject(e.target.value)} className="flex-1 px-3 py-2 border rounded-xl text-xs"><option value="국어">국어</option><option value="수학">수학</option><option value="물리학 I">물리학 I</option><option value="통합과학">통합과학</option></select>
                                     </div>
-
-                                    {/* 정회원 명부 */}
-                                    <div className="space-y-3">
-                                        <h3 className="text-xs font-extrabold text-slate-700 flex items-center gap-1.5">
-                                            <i className="fa-solid fa-address-book text-purple-600"></i>
-                                            도계 아카이브 인가 완료 학생 인명부 ({usersList.length}명)
-                                        </h3>
-                                        <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-[250px] overflow-y-auto">
-                                            <table className="w-full text-left border-collapse text-xs">
-                                                <thead>
-                                                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold">
-                                                        <th className="p-3">이름</th>
-                                                        <th className="p-3">인가 학년</th>
-                                                        <th className="p-3">등록 고유 이메일</th>
-                                                        <th className="p-3">계정 등급</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-100 text-slate-600">
-                                                    {usersList.map((usr, index) => (
-                                                        <tr key={index} className="hover:bg-slate-50/50">
-                                                            <td className="p-3 font-semibold text-slate-800">{usr.name}</td>
-                                                            <td className="p-3">{usr.grade}</td>
-                                                            <td className="p-3 font-mono text-slate-500">{usr.email}</td>
-                                                            <td className="p-3">
-                                                                {usr.role === "admin" ? (
-                                                                    <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-bold text-[9px]">ADMIN</span>
-                                                                ) : (
-                                                                    <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full text-[9px]">STUDENT</span>
-                                                                )}
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                    {usersList.length === 0 && (
-                                                        <tr>
-                                                            <td colSpan="4" className="p-4 text-center text-slate-400">가입 승인된 정회원 정보가 비어 있습니다.</td>
-                                                        </tr>
-                                                    )}
-                                                </tbody>
-                                            </table>
-                                        </div>
+                                    <div className="border-2 border-dashed border-blue-200 bg-blue-50/50 rounded-2xl p-6 text-center cursor-pointer relative hover:border-blue-400">
+                                        <input type="file" onChange={(e) => e.target.files && setNewFile(e.target.files[0])} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                                        {newFile ? (
+                                            <div><p className="text-xs font-bold text-blue-700 truncate">{newFile.name}</p><p className="text-[10px] text-slate-400 mt-1">{(newFile.size/(1024*1024)).toFixed(2)} MB</p></div>
+                                        ) : (
+                                            <div><i className="fa-solid fa-file-circle-plus text-3xl text-blue-300 mb-2"></i><p className="text-xs font-bold text-slate-600">이곳을 눌러 실제 파일을 첨부하세요</p><p className="text-[10px] text-slate-400">PDF, 이미지, HWP 등 모두 지원</p></div>
+                                        )}
                                     </div>
-                                </div>
+                                    <textarea placeholder="자료에 대한 팁이나 오답노트를 적어주세요." value={newDescription} onChange={(e)=>setNewDescription(e.target.value)} rows="3" className="w-full px-3 py-2 border rounded-xl text-xs resize-none"></textarea>
+                                    
+                                    {/* 🚀 파일 업로드 프로그레스 바 */}
+                                    {uploadProgress > 0 && uploadProgress < 100 && (
+                                        <div className="w-full bg-slate-200 rounded-full h-2.5 mb-4">
+                                            <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }}></div>
+                                            <p className="text-[10px] text-center text-slate-500 mt-1">서버에 안전하게 올리는 중... {uploadProgress}%</p>
+                                        </div>
+                                    )}
+                                    
+                                    <button type="submit" disabled={uploadProgress > 0 && uploadProgress < 100} className="w-full bg-blue-600 disabled:bg-blue-300 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-md text-sm">도계 아카이브 등재 신청</button>
+                                </form>
                             </div>
                         </div>
                     )}
 
-                    {/* 커스텀 Alert 경고 패널 */}
+                    {/* 토스트 및 알림창 등 유틸 모달 유지 */}
+                    {toast && <div className="fixed bottom-4 right-4 z-[99] bg-slate-900 text-white py-3 px-5 rounded-xl text-xs">{toast.message}</div>}
                     {customAlert && (
                         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
-                            <div className="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full border border-slate-200 text-center space-y-4">
-                                <div className="text-blue-600 text-3xl animate-bounce">
-                                    <i className="fa-solid fa-circle-exclamation"></i>
-                                </div>
-                                <div className="space-y-1">
-                                    <h3 className="text-sm font-bold text-slate-800">{customAlert.title}</h3>
-                                    <p className="text-xs text-slate-500 leading-relaxed">{customAlert.message}</p>
-                                </div>
-                                <button 
-                                    onClick={() => setCustomAlert(null)}
-                                    className="w-full bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold py-2 rounded-xl transition-all">
-                                    동의 및 확인
-                                </button>
-                            </div>
+                            <div className="bg-white p-6 rounded-2xl max-w-sm w-full text-center"><h3 className="font-bold text-slate-800 mb-2">{customAlert.title}</h3><p className="text-xs text-slate-500 mb-4 whitespace-pre-wrap">{customAlert.message}</p><button onClick={()=>setCustomAlert(null)} className="w-full bg-slate-800 text-white text-xs font-bold py-2 rounded-xl">확인</button></div>
                         </div>
                     )}
-
-                    {/* 커스텀 Confirm 확인 통제 패널 */}
                     {customConfirm && (
                         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
-                            <div className="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full border border-slate-200 text-center space-y-4">
-                                <div className="text-amber-500 text-3xl">
-                                    <i className="fa-solid fa-triangle-exclamation"></i>
-                                </div>
-                                <div className="space-y-1">
-                                    <h3 className="text-sm font-bold text-slate-800">{customConfirm.title}</h3>
-                                    <p className="text-xs text-slate-500 leading-relaxed">{customConfirm.message}</p>
-                                </div>
-                                <div className="flex gap-2">
-                                    <button 
-                                        onClick={() => setCustomConfirm(null)}
-                                        className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold py-2 rounded-xl transition-all">
-                                        취소
-                                    </button>
-                                    <button 
-                                        onClick={() => {
-                                            customConfirm.onConfirm();
-                                            setCustomConfirm(null);
-                                        }}
-                                        className="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-2 rounded-xl transition-all">
-                                        권한 즉각 실행
-                                    </button>
-                                </div>
+                            <div className="bg-white p-6 rounded-2xl max-w-sm w-full text-center"><h3 className="font-bold text-slate-800 mb-2">{customConfirm.title}</h3><p className="text-xs text-slate-500 mb-4">{customConfirm.message}</p>
+                                <div className="flex gap-2"><button onClick={()=>setCustomConfirm(null)} className="flex-1 bg-slate-100 text-xs font-bold py-2 rounded-xl">취소</button><button onClick={()=>{customConfirm.onConfirm(); setCustomConfirm(null);}} className="flex-1 bg-red-600 text-white text-xs font-bold py-2 rounded-xl">실행</button></div>
                             </div>
-                        </div>
-                    )}
-
-                    {/* 피드백 실시간 알림 Toast */}
-                    {toast && (
-                        <div className="fixed bottom-4 right-4 z-[99] bg-slate-900 text-white py-3 px-5 rounded-xl shadow-2xl border border-slate-800 flex items-center space-x-2.5 max-w-sm">
-                            {toast.type === "error" ? (
-                                <span className="text-red-400 text-sm shrink-0"><i className="fa-solid fa-circle-xmark"></i></span>
-                            ) : (
-                                <span className="text-green-400 text-sm shrink-0"><i className="fa-solid fa-circle-check"></i></span>
-                            )}
-                            <span className="text-xs font-medium">{toast.message}</span>
                         </div>
                     )}
                 </div>
