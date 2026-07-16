@@ -49,7 +49,6 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        // 🚀 Firebase Storage 연동 (진짜 파일 업로드/다운로드용)
         import { getStorage, ref, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         // 전성민님의 진짜 Firebase API 설정값 연동완료
@@ -132,7 +131,6 @@
             // 필터링
             const [activeGradeFilter, setActiveGradeFilter] = useState("전체");
             const [activeSubjectFilter, setActiveSubjectFilter] = useState("전체");
-            const [activeTypeFilter, setActiveTypeFilter] = useState("전체");
             
             // 모달 관리
             const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -143,14 +141,14 @@
             const [noticeText, setNoticeText] = useState("도계고등학교 학습 아카이브 3.2에 오신 것을 환영합니다! 공지 및 학사일정이 완벽하게 연동됩니다.");
             const [editNotice, setEditNotice] = useState(noticeText);
 
-            // 🚀 실제 파일 업로드 상태 관리
+            // 실제 파일 업로드 상태 관리
             const [newTitle, setNewTitle] = useState("");
             const [newSubject, setNewSubject] = useState("물리학 I");
             const [newGrade, setNewGrade] = useState("1학년");
             const [newType, setNewType] = useState("요약 노트");
-            const [newFile, setNewFile] = useState(null); // 실제 파일 객체 저장용
+            const [newFile, setNewFile] = useState(null); 
             const [newDescription, setNewDescription] = useState("");
-            const [uploadProgress, setUploadProgress] = useState(0); // 프로그레스 바 상태
+            const [uploadProgress, setUploadProgress] = useState(0); 
 
             // Q&A 작성 폼
             const [newQnaTitle, setNewQnaTitle] = useState("");
@@ -350,7 +348,7 @@
                 });
             };
 
-            // 👥 Firestore 실시간 리스너 (학생 계정 정보 관리자 조회용)
+            // Firestore 실시간 리스너 (학생 계정 정보 관리자 조회용)
             const listenToCloudUsers = () => {
                 const { collection, onSnapshot } = window.firebaseMethods;
                 const usersRef = collection(window.db, 'artifacts', window.appId, 'public', 'data', 'users');
@@ -425,7 +423,7 @@
                 showToast("로그아웃 되었습니다.");
             };
 
-            // 🚀 진짜 파일 업로드 로직 (Firebase Storage)
+            // 진짜 파일 업로드 로직 (Firebase Storage)
             const handleUpload = async (e) => {
                 e.preventDefault();
                 if (!user) return;
@@ -440,13 +438,12 @@
                 }
 
                 const newId = String(Date.now());
-                setUploadProgress(5); // 프로그레스 바 시작
+                setUploadProgress(5); 
 
                 try {
                     const { ref, uploadBytesResumable, getDownloadURL, doc, setDoc } = window.firebaseMethods;
                     const storage = window.storage;
                     
-                    // 파일명 충돌 방지를 위해 고유 ID를 붙임
                     const safeFileName = `${newId}_${newFile.name}`;
                     const fileRef = ref(storage, `materials/${safeFileName}`);
                     
@@ -454,7 +451,6 @@
                     
                     uploadTask.on('state_changed', 
                         (snapshot) => {
-                            // 진행률 계산
                             const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
                             setUploadProgress(Math.max(5, Math.round(progress)));
                         }, 
@@ -464,7 +460,6 @@
                             setUploadProgress(0);
                         }, 
                         async () => {
-                            // 업로드 완료 후 다운로드 URL 획득
                             const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
                             setUploadProgress(100);
 
@@ -484,22 +479,19 @@
                                 description: newDescription,
                                 comments: [],
                                 date: new Date().toISOString().split('T')[0],
-                                fileUrl: downloadUrl // 🚀 Firebase Storage 진짜 링크 저장
+                                fileUrl: downloadUrl 
                             };
 
-                            // Firestore 데이터베이스에 문서 기록
                             await setDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'materials', newId), formatDoc);
                             
                             showToast("진짜 파일 자료 제공이 완벽하게 등록되었습니다!");
                             setIsUploadOpen(false);
                             
-                            // 폼 초기화
                             setNewTitle("");
                             setNewFile(null);
                             setNewDescription("");
                             setUploadProgress(0);
                             
-                            // 파일 입력 필드 초기화 (DOM 레벨)
                             const fileInput = document.getElementById("file-upload-input");
                             if(fileInput) fileInput.value = "";
                         }
@@ -522,18 +514,16 @@
                 }
             };
 
-            // 🚀 실제 파일 다운로드 로직
+            // 실제 파일 다운로드 로직
             const handleDownload = async (mat) => {
                 if (!user) return;
                 
-                // 다운로드 수 증가
                 if (!isLocalMode && window.firebaseMethods) {
                     const { doc, updateDoc } = window.firebaseMethods;
                     updateDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'materials', mat.id), { downloads: (mat.downloads || 0) + 1 }).catch(()=>{});
                 }
 
                 if (mat.fileUrl) {
-                    // Firebase Storage 파일은 브라우저에서 새 창으로 열어서 다운로드 되도록 처리
                     window.open(mat.fileUrl, '_blank');
                     showToast("원본 파일을 다운로드합니다.");
                     return;
@@ -605,9 +595,7 @@
                     
                     if (!isLocalMode && window.firebaseMethods) {
                         const { doc, deleteDoc, ref, deleteObject } = window.firebaseMethods;
-                        // Firestore 텍스트 데이터 삭제
                         deleteDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'materials', mId)).catch(()=>{});
-                        // Storage 실제 파일 삭제
                         if (target && target.fileUrl) {
                             try {
                                 const fileRef = ref(window.storage, `materials/${mId}_${target.fileName}`);
@@ -631,17 +619,15 @@
                 });
             }
 
-            // 👥 관리자의 학생 영구 제명/탈퇴 제어 권한
+            // 관리자의 학생 영구 제명/탈퇴 제어 권한
             const deleteUser = async (userEmail) => {
                 if (user?.role !== "admin") return;
                 triggerConfirm(`[${userEmail}] 학생 계정을 아카이브에서 강제 추방 및 영구 탈퇴 처리하시겠습니까?`, async () => {
-                    // 로컬 스토리지 삭제
                     const localUsers = JSON.parse(localStorage.getItem("dogye_archive_users") || "[]");
                     const filteredLocal = localUsers.filter(u => u.email !== userEmail);
                     localStorage.setItem("dogye_archive_users", JSON.stringify(filteredLocal));
                     setUsersList(prev => prev.filter(u => u.email !== userEmail));
 
-                    // 클라우드 데이터베이스 삭제
                     if (!isLocalMode && window.firebaseMethods) {
                         const { doc, deleteDoc } = window.firebaseMethods;
                         try {
@@ -1084,7 +1070,6 @@
                                         <label className="block text-[11px] font-bold text-blue-800 mb-2"><i className="fa-solid fa-paperclip mr-1"></i>실제 파일 첨부 (PDF, HWP, 이미지 등)</label>
                                         <input type="file" id="file-upload-input" onChange={(e)=>setNewFile(e.target.files[0])} className="w-full text-xs bg-white rounded-lg p-2 border border-blue-100" disabled={uploadProgress > 0} />
                                         
-                                        {/* 🚀 파일 업로드 애니메이션 진행 표시줄 */}
                                         {uploadProgress > 0 && (
                                             <div className="mt-3">
                                                 <div className="flex justify-between text-[10px] font-bold text-blue-600 mb-1">
@@ -1108,7 +1093,7 @@
                         </div>
                     )}
 
-                    {/* ⚙️ 최고 관리자 콘솔 모달 (3.2 통합 허브 버전) */}
+                    {/* 최고 관리자 콘솔 모달 (3.2 통합 허브 버전) */}
                     {isAdminConsoleOpen && (
                         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                             <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200">
@@ -1118,7 +1103,6 @@
                                         <button onClick={() => setIsAdminConsoleOpen(false)} className="text-slate-400 hover:text-white"><i className="fa-solid fa-xmark text-lg"></i></button>
                                     </div>
                                     
-                                    {/* ⚙️ 관리자 제어 탭 */}
                                     <div className="flex bg-slate-700/60 p-0.5 rounded-lg text-xs font-semibold">
                                         <button onClick={() => setAdminTab("config")} className={`flex-1 py-1.5 rounded-md transition-all ${adminTab === 'config' ? 'bg-slate-900 text-white' : 'text-slate-300 hover:text-white'}`}>📢 공지 & 학사일정</button>
                                         <button onClick={() => setAdminTab("users")} className={`flex-1 py-1.5 rounded-md transition-all ${adminTab === 'users' ? 'bg-slate-900 text-white' : 'text-slate-300 hover:text-white'}`}>👥 학생 정보 관리 ({usersList.length})</button>
@@ -1127,7 +1111,6 @@
 
                                 {adminTab === "config" ? (
                                     <form onSubmit={handleAdminSettingsSave} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-                                        {/* 📢 공지사항 전면 수정 기능 신설 */}
                                         <div>
                                             <label className="block text-xs font-bold text-slate-500 mb-1.5">🚨 실시간 전교생 상단 공지 수정</label>
                                             <textarea 
@@ -1168,7 +1151,6 @@
                                             />
                                         </div>
 
-                                        {/* 가입된 학생 목록 테이블 */}
                                         <div className="max-h-[50vh] overflow-y-auto border border-slate-100 rounded-xl divide-y divide-slate-100 bg-slate-50">
                                             {filteredUsers.map(u => (
                                                 <div key={u.id || u.email} className="p-3 flex items-center justify-between text-xs hover:bg-slate-100 transition-all">
